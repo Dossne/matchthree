@@ -39,7 +39,6 @@ Each level is a plain text file, e.g. `Levels/level_001.txt`.
 - `2` = color 2
 - `3` = color 3
 - `4` = color 4
-- `5` = color 5
 
 #### Obstacles / objectives
 - `R` = **Rock**  
