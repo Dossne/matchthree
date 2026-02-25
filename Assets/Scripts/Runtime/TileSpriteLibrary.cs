@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using UnityEngine;
 
 #if UNITY_EDITOR
@@ -13,6 +15,8 @@ namespace MatchThree.Runtime
 
     public sealed class TileSpriteLibrary
     {
+        private const string TilesFolderPath = "Assets/Tiles";
+
         private readonly Dictionary<int, Sprite> _normalByColor = new();
         private readonly Dictionary<ObstacleSpriteType, Sprite> _obstacles = new();
         private readonly Dictionary<BoosterSpriteType, Sprite> _boosters = new();
@@ -33,10 +37,11 @@ namespace MatchThree.Runtime
         public static TileSpriteLibrary LoadFromTilesFolder()
         {
             var library = new TileSpriteLibrary();
-            var sprites = LoadSprites();
-            foreach (var sprite in sprites)
+            var sprites = LoadSpritesByKey();
+            foreach (var pair in sprites)
             {
-                var key = sprite.name.Trim().ToLowerInvariant();
+                var key = pair.Key;
+                var sprite = pair.Value;
                 if (Mapping.TryGetValue(key, out var assign))
                 {
                     assign(library, sprite);
@@ -51,25 +56,54 @@ namespace MatchThree.Runtime
         public Sprite GetObstacleSprite(ObstacleSpriteType type) => TryGet(_obstacles, type);
         public Sprite GetBoosterSprite(BoosterSpriteType type) => TryGet(_boosters, type);
 
-        private static IEnumerable<Sprite> LoadSprites()
+        private static IReadOnlyDictionary<string, Sprite> LoadSpritesByKey()
         {
-            var loaded = new List<Sprite>(Resources.LoadAll<Sprite>("Tiles"));
+            var loaded = new Dictionary<string, Sprite>(StringComparer.OrdinalIgnoreCase);
+            var foundPaths = new List<string>();
+
 #if UNITY_EDITOR
-            if (loaded.Count == 0)
+            EnsureTilesAreImportedAsSprites();
+            var guids = AssetDatabase.FindAssets("t:Sprite", new[] { TilesFolderPath });
+            foreach (var guid in guids)
             {
-                var guids = AssetDatabase.FindAssets("t:Sprite", new[] { "Assets/Tiles" });
-                foreach (var guid in guids)
+                var path = AssetDatabase.GUIDToAssetPath(guid);
+                var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(path);
+                if (sprite == null)
                 {
-                    var path = AssetDatabase.GUIDToAssetPath(guid);
-                    var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(path);
-                    if (sprite != null)
-                    {
-                        loaded.Add(sprite);
-                    }
+                    continue;
                 }
+
+                var key = Path.GetFileNameWithoutExtension(path).ToLowerInvariant();
+                loaded[key] = sprite;
+                foundPaths.Add(path);
+            }
+#else
+            foreach (var sprite in Resources.LoadAll<Sprite>("Tiles"))
+            {
+                if (sprite == null)
+                {
+                    continue;
+                }
+
+                var key = sprite.name.Trim().ToLowerInvariant();
+                loaded[key] = sprite;
             }
 #endif
+
+            ValidateExpectedKeys(loaded.Keys, foundPaths);
             return loaded;
+        }
+
+        private static void ValidateExpectedKeys(IEnumerable<string> foundKeys, IReadOnlyCollection<string> foundPaths)
+        {
+            var expectedKeys = Mapping.Keys.OrderBy(key => key).ToArray();
+            var keySet = new HashSet<string>(foundKeys, StringComparer.OrdinalIgnoreCase);
+            var missing = expectedKeys.Where(expected => !keySet.Contains(expected)).ToArray();
+            if (missing.Length > 0)
+            {
+                var pathsText = foundPaths.Count > 0 ? string.Join(", ", foundPaths.OrderBy(path => path)) : "(none)";
+                Debug.LogWarning($"Tile sprite load check: missing keys [{string.Join(", ", missing)}] in {TilesFolderPath}. Found sprite paths: {pathsText}");
+            }
         }
 
         private static TValue TryGet<TKey, TValue>(IReadOnlyDictionary<TKey, TValue> dict, TKey key)
@@ -93,7 +127,7 @@ namespace MatchThree.Runtime
 
             if (missing.Count > 0)
             {
-                Debug.LogError($"Missing tile sprites in Assets/Tiles (or Resources/Tiles): {string.Join(", ", missing)}");
+                Debug.LogError($"Missing tile sprites in {TilesFolderPath}: {string.Join(", ", missing)}");
             }
         }
 
@@ -104,5 +138,38 @@ namespace MatchThree.Runtime
                 missing.Add(label);
             }
         }
+
+#if UNITY_EDITOR
+        private static void EnsureTilesAreImportedAsSprites()
+        {
+            var textureGuids = AssetDatabase.FindAssets("t:Texture", new[] { TilesFolderPath });
+            var foundNames = new List<string>();
+            var changed = 0;
+
+            foreach (var guid in textureGuids)
+            {
+                var path = AssetDatabase.GUIDToAssetPath(guid);
+                var importer = AssetImporter.GetAtPath(path) as TextureImporter;
+                if (importer == null)
+                {
+                    continue;
+                }
+
+                foundNames.Add(Path.GetFileNameWithoutExtension(path));
+                if (importer.textureType == TextureImporterType.Sprite)
+                {
+                    continue;
+                }
+
+                importer.textureType = TextureImporterType.Sprite;
+                importer.spriteImportMode = SpriteImportMode.Single;
+                importer.SaveAndReimport();
+                changed++;
+            }
+
+            foundNames.Sort(StringComparer.OrdinalIgnoreCase);
+            Debug.Log($"Tiles import check: found {foundNames.Count} sprites in {TilesFolderPath}: [{string.Join(", ", foundNames)}]{(changed > 0 ? $". Reimported {changed} textures." : string.Empty)}");
+        }
+#endif
     }
 }

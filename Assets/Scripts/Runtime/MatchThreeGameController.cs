@@ -28,6 +28,7 @@ namespace MatchThree.Runtime
         private RectTransform _animationLayer;
         private Text _status;
         private readonly Dictionary<BoardPosition, CellView> _cells = new();
+        private readonly HashSet<string> _loggedMissingSpriteKeys = new();
         private BoardPosition? _selected;
         private bool _isAnimating;
 
@@ -498,12 +499,49 @@ namespace MatchThree.Runtime
                     break;
             }
 
-            if (sprite == null && (tile.Kind == TileKind.Piece || tile.Kind == TileKind.Rock || tile.Kind == TileKind.Boulder || tile.Kind == TileKind.Special))
+            var missingKey = GetExpectedSpriteKey(tile);
+            if (sprite == null && !string.IsNullOrEmpty(missingKey))
             {
-                Debug.LogError($"Missing sprite for tile kind={tile.Kind}, color={tile.ColorId}, special={tile.SpecialType}. Placeholder will be shown.");
+                LogMissingSpriteOnce(missingKey);
             }
 
             return new TileVisual(sprite, placeholder, label);
+        }
+
+        private string GetExpectedSpriteKey(TileEntitySnapshot tile)
+        {
+            return tile.Kind switch
+            {
+                TileKind.Piece => tile.ColorId switch
+                {
+                    1 => "frog",
+                    2 => "cat",
+                    3 => "whaler",
+                    4 => "capybara",
+                    _ => null
+                },
+                TileKind.Rock => "rock",
+                TileKind.Boulder => "boulder",
+                TileKind.Special => tile.SpecialType switch
+                {
+                    SpecialType.RocketHorizontal => "line",
+                    SpecialType.RocketVertical => "line",
+                    SpecialType.Bomb => "bomb",
+                    SpecialType.SuperLightning => "lightning",
+                    _ => null
+                },
+                _ => null
+            };
+        }
+
+        private void LogMissingSpriteOnce(string key)
+        {
+            if (!_loggedMissingSpriteKeys.Add(key))
+            {
+                return;
+            }
+
+            Debug.LogWarning($"Missing sprite for key='{key}' (expected in Assets/Tiles). Using placeholder.");
         }
 
         private static void ApplyResolvedVisual(Image background, Image icon, Text label, TileVisual visual)
