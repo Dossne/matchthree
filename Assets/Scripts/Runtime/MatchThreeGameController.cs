@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using MatchThree.Core;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -9,11 +10,12 @@ namespace MatchThree.Runtime
     public sealed class MatchThreeGameController : MonoBehaviour
     {
         [SerializeField] private TextAsset levelAsset;
-        [SerializeField] private string levelResourcePath = "Levels/level_001";
+        [SerializeField] private string levelResourcePath = "Levels/level_000";
         [SerializeField] private int randomSeed = 1234;
 
         private Board _board;
         private BoardResolver _resolver;
+        private TileSpriteLibrary _spriteLibrary;
         private GridLayoutGroup _grid;
         private Text _status;
         private readonly Dictionary<BoardPosition, Button> _buttons = new();
@@ -40,10 +42,40 @@ namespace MatchThree.Runtime
                 return;
             }
 
-            _board = LevelParser.Parse(asset.text, new[] { 1, 2, 3, 4, 5 });
+            _board = LevelParser.Parse(asset.text, new[] { 1, 2, 3, 4 });
             _resolver = new BoardResolver(_board, new SeededRandom(randomSeed));
+            _resolver.FillBoardWithoutInitialMatches();
+
+            try
+            {
+                _spriteLibrary = TileSpriteLibrary.LoadFromTilesFolder();
+            }
+            catch (System.Exception ex)
+            {
+                _status.text = ex.Message;
+            }
+
             BuildGrid();
             Render();
+        }
+
+        private void Update()
+        {
+            if (_resolver == null) return;
+            if (!Input.GetKeyDown(KeyCode.M)) return;
+
+            var groups = _resolver.GetCurrentMatchGroups();
+            if (groups.Count == 0)
+            {
+                Debug.Log("No active matches detected.");
+                return;
+            }
+
+            for (var i = 0; i < groups.Count; i++)
+            {
+                var coords = string.Join(", ", groups[i].Select(p => $"({p.X},{p.Y})"));
+                Debug.Log($"Match[{i}]: {coords}");
+            }
         }
 
         private void EnsureUi()
@@ -140,6 +172,7 @@ namespace MatchThree.Runtime
                 var cell = _board.Cells[p.X, p.Y];
                 var image = button.GetComponent<Image>();
                 var text = button.GetComponentInChildren<Text>();
+                image.sprite = null;
 
                 button.interactable = cell.IsPlayable;
                 if (!cell.IsPlayable)
@@ -158,31 +191,42 @@ namespace MatchThree.Runtime
                     switch (tile.Kind)
                     {
                         case TileKind.Piece:
-                            image.color = ColorFor(tile.ColorId);
-                            text.text = tile.ColorId.ToString();
+                            image.sprite = _spriteLibrary?.GetNormalSprite(tile.ColorId);
+                            image.color = image.sprite != null ? Color.white : ColorFor(tile.ColorId);
+                            text.text = image.sprite != null ? string.Empty : tile.ColorId.ToString();
                             break;
                         case TileKind.Rock:
-                            image.color = Color.gray;
-                            text.text = "R";
+                            image.sprite = _spriteLibrary?.GetObstacleSprite(ObstacleSpriteType.Rock);
+                            image.color = image.sprite != null ? Color.white : Color.gray;
+                            text.text = image.sprite != null ? string.Empty : "R";
                             break;
                         case TileKind.Boulder:
-                            image.color = new Color(0.35f, 0.25f, 0.2f);
-                            text.text = "B";
+                            image.sprite = _spriteLibrary?.GetObstacleSprite(ObstacleSpriteType.Boulder);
+                            image.color = image.sprite != null ? Color.white : new Color(0.35f, 0.25f, 0.2f);
+                            text.text = image.sprite != null ? string.Empty : "B";
                             break;
                         case TileKind.Statuette:
                             image.color = Color.yellow;
                             text.text = "S";
                             break;
                         case TileKind.Special:
-                            image.color = new Color(1f, 0.6f, 0.1f);
-                            text.text = tile.SpecialType switch
+                            image.sprite = tile.SpecialType switch
+                            {
+                                SpecialType.RocketHorizontal => _spriteLibrary?.GetBoosterSprite(BoosterSpriteType.Rocket),
+                                SpecialType.RocketVertical => _spriteLibrary?.GetBoosterSprite(BoosterSpriteType.Rocket),
+                                SpecialType.Bomb => _spriteLibrary?.GetBoosterSprite(BoosterSpriteType.Bomb),
+                                SpecialType.SuperLightning => _spriteLibrary?.GetBoosterSprite(BoosterSpriteType.SuperLightning),
+                                _ => null
+                            };
+                            image.color = image.sprite != null ? Color.white : new Color(1f, 0.6f, 0.1f);
+                            text.text = image.sprite == null ? tile.SpecialType switch
                             {
                                 SpecialType.RocketHorizontal => "RH",
                                 SpecialType.RocketVertical => "RV",
                                 SpecialType.Bomb => "BO",
                                 SpecialType.SuperLightning => "SL",
                                 _ => "?"
-                            };
+                            } : string.Empty;
                             break;
                     }
                 }
