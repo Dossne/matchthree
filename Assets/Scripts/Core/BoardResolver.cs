@@ -16,6 +16,24 @@ namespace MatchThree.Core
         }
 
         /// <summary>
+        /// Fills every playable empty cell with a color that does not immediately create a 3+ line.
+        /// Rule: when evaluating (x,y), reject any color that would complete XXX with left/left-left
+        /// or up/up-up neighbors. If all colors are blocked we fall back to the full color list.
+        /// </summary>
+        public void FillBoardWithoutInitialMatches()
+        {
+            for (var y = 0; y < _board.Height; y++)
+            for (var x = 0; x < _board.Width; x++)
+            {
+                var cell = _board.Cells[x, y];
+                if (!cell.IsPlayable || cell.Tile != null) continue;
+
+                var color = ChooseRefillColor(x, y);
+                cell.Tile = TileEntity.Piece(color);
+            }
+        }
+
+        /// <summary>
         /// Special creation placement convention: special is created on the move destination cell.
         /// </summary>
         public MoveResult TrySwapAndResolve(Move move)
@@ -240,9 +258,37 @@ namespace MatchThree.Core
             {
                 var c = _board.Cells[x, y];
                 if (!c.IsPlayable || c.Tile != null) continue;
-                var color = _board.AvailableColors[_random.NextInt(0, _board.AvailableColors.Count)];
+                var color = ChooseRefillColor(x, y);
                 c.Tile = TileEntity.Piece(color);
             }
+        }
+
+        private int ChooseRefillColor(int x, int y)
+        {
+            var valid = new List<int>(_board.AvailableColors.Count);
+            foreach (var color in _board.AvailableColors)
+            {
+                if (!WouldCreateImmediateLine(x, y, color))
+                {
+                    valid.Add(color);
+                }
+            }
+
+            var pool = valid.Count > 0 ? valid : _board.AvailableColors;
+            return pool[_random.NextInt(0, pool.Count)];
+        }
+
+        private bool WouldCreateImmediateLine(int x, int y, int color)
+        {
+            return SamePieceColor(x - 1, y, color) && SamePieceColor(x - 2, y, color)
+                   || SamePieceColor(x, y - 1, color) && SamePieceColor(x, y - 2, color);
+        }
+
+        private bool SamePieceColor(int x, int y, int color)
+        {
+            if (x < 0 || y < 0 || x >= _board.Width || y >= _board.Height) return false;
+            var cell = _board.Cells[x, y];
+            return cell.IsPlayable && cell.Tile?.Kind == TileKind.Piece && cell.Tile.ColorId == color;
         }
 
         private sealed class MatchRun
@@ -296,6 +342,13 @@ namespace MatchThree.Core
             }
 
             return runs;
+        }
+
+        public IReadOnlyList<IReadOnlyList<BoardPosition>> GetCurrentMatchGroups()
+        {
+            return FindMatches()
+                .Select(run => (IReadOnlyList<BoardPosition>)run.Cells)
+                .ToList();
         }
 
         private (BoardPosition Position, SpecialType Type)? DetermineSpecial(List<MatchRun> runs, BoardPosition placement)
