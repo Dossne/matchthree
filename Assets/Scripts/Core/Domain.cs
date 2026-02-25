@@ -118,16 +118,66 @@ namespace MatchThree.Core
     public sealed class ResolveStep
     {
         public readonly List<BoardPosition> Removed = new();
+        public readonly List<(BoardPosition Position, TileEntitySnapshot Tile)> RemovedTiles = new();
+        public readonly List<TileMovement> Movements = new();
+        public readonly List<TileSpawn> Spawns = new();
         public readonly List<BoardPosition> DamagedObstacles = new();
         public readonly List<BoardPosition> DestroyedObstacles = new();
         public readonly List<(BoardPosition Position, SpecialType Type)> CreatedSpecials = new();
-        public bool DidChange => Removed.Count > 0 || DamagedObstacles.Count > 0 || DestroyedObstacles.Count > 0 || CreatedSpecials.Count > 0;
+        public bool DidChange => Removed.Count > 0 || DamagedObstacles.Count > 0 || DestroyedObstacles.Count > 0 || CreatedSpecials.Count > 0 || Movements.Count > 0 || Spawns.Count > 0;
+    }
+
+    public readonly struct TileEntitySnapshot
+    {
+        public readonly TileKind Kind;
+        public readonly int ColorId;
+        public readonly SpecialType SpecialType;
+
+        public TileEntitySnapshot(TileKind kind, int colorId, SpecialType specialType)
+        {
+            Kind = kind;
+            ColorId = colorId;
+            SpecialType = specialType;
+        }
+
+        public static TileEntitySnapshot From(TileEntity tile)
+            => new TileEntitySnapshot(tile.Kind, tile.ColorId, tile.SpecialType);
+    }
+
+    public readonly struct TileMovement
+    {
+        public readonly BoardPosition From;
+        public readonly BoardPosition To;
+        public readonly TileEntitySnapshot Tile;
+
+        public TileMovement(BoardPosition from, BoardPosition to, TileEntitySnapshot tile)
+        {
+            From = from;
+            To = to;
+            Tile = tile;
+        }
+    }
+
+    public readonly struct TileSpawn
+    {
+        public readonly BoardPosition To;
+        public readonly int SpawnDistance;
+        public readonly TileEntitySnapshot Tile;
+
+        public TileSpawn(BoardPosition to, int spawnDistance, TileEntitySnapshot tile)
+        {
+            To = to;
+            SpawnDistance = spawnDistance;
+            Tile = tile;
+        }
     }
 
     public sealed class MoveResult
     {
         public bool Performed;
         public bool Reverted;
+        public TileEntitySnapshot? SwapFromTile;
+        public TileEntitySnapshot? SwapToTile;
         public readonly List<ResolveStep> Steps = new();
     }
 }

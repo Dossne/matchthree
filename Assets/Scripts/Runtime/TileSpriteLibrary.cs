@@ -93,7 +93,7 @@ namespace MatchThree.Runtime
 
             if (missing.Count > 0)
             {
-                throw new InvalidOperationException($"Missing required tile sprites in Assets/Tiles (or Resources/Tiles): {string.Join(", ", missing)}");
+                Debug.LogError($"Missing tile sprites in Assets/Tiles (or Resources/Tiles): {string.Join(", ", missing)}");
             }
         }
 

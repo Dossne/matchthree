@@ -17,7 +17,22 @@
   - `rock, boulder` -> obstacles
   - `line, bomb, lightning` -> boosters
 - In Editor play mode, sprites are loaded from `Assets/Tiles` via `AssetDatabase` when `Resources/Tiles` is empty.
-- Missing assets throw a clear exception listing missing file roles.
+- Missing assets now emit a clear `Debug.LogError` and the board falls back to placeholder squares for only missing sprites.
+
+## Tile layering and placeholder behavior
+- Each cell now renders with two layers:
+  - foreground icon (`Image`) for real sprite assets
+  - optional placeholder background (`Image`) + text for debug fallback
+- Rule: when a sprite exists, placeholder background is disabled so only the icon is visible.
+
+## Animation timing and cascade readability
+- Input is blocked while animation coroutines are running.
+- Swap animation uses `0.10s`.
+- Clear animation uses a brief `0.08s` fade/scale pop.
+- Falls/spawns animate per distance:
+  - `duration = clamp(distance * 0.06s, 0.08s, 0.35s)`
+- Each resolve step adds a small `0.04s` settle delay, so longer cascades naturally take longer.
+- Core resolver now exposes per-step removed tile snapshots, movements, and spawn metadata to keep view animation data-driven and independent from gameplay logic.
 
 ## Match debugging helper
 - Press `M` in play mode to log current detected match groups and coordinates.

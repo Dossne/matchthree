@@ -47,6 +47,9 @@ namespace MatchThree.Core
             if (!fromCell.IsPlayable || !toCell.IsPlayable || fromCell.Tile == null || toCell.Tile == null) return result;
             if (!fromCell.Tile.IsSwappable || !toCell.Tile.IsSwappable) return result;
 
+            result.SwapFromTile = TileEntitySnapshot.From(fromCell.Tile);
+            result.SwapToTile = TileEntitySnapshot.From(toCell.Tile);
+
             _board.Swap(move.From, move.To);
             result.Performed = true;
 
@@ -96,6 +99,7 @@ namespace MatchThree.Core
                 {
                     if (_board.CellAt(p).Tile != null)
                     {
+                        step.RemovedTiles.Add((p, TileEntitySnapshot.From(_board.CellAt(p).Tile)));
                         _board.CellAt(p).Tile = null;
                         step.Removed.Add(p);
                     }
@@ -107,8 +111,8 @@ namespace MatchThree.Core
                     _board.CellAt(special.Value.Position).Tile = TileEntity.Special(special.Value.Type);
                 }
 
-                ApplyGravity();
-                Refill();
+                ApplyGravity(step);
+                Refill(step);
                 result.Steps.Add(step);
             }
         }
@@ -188,14 +192,15 @@ namespace MatchThree.Core
             {
                 if (_board.CellAt(p).Tile != null)
                 {
+                    step.RemovedTiles.Add((p, TileEntitySnapshot.From(_board.CellAt(p).Tile)));
                     _board.CellAt(p).Tile = null;
                     step.Removed.Add(p);
                 }
             }
 
             ApplyObstacleDamage(step.Removed, step);
-            ApplyGravity();
-            Refill();
+            ApplyGravity(step);
+            Refill(step);
             return step;
         }
 
@@ -228,7 +233,7 @@ namespace MatchThree.Core
             }
         }
 
-        private void ApplyGravity()
+        private void ApplyGravity(ResolveStep step)
         {
             for (var x = 0; x < _board.Width; x++)
             {
@@ -243,6 +248,9 @@ namespace MatchThree.Core
                         if (!above.IsPlayable) continue;
                         if (above.Tile == null) continue;
                         if (!above.Tile.IsMovable) break;
+                        var from = new BoardPosition(x, searchY);
+                        var to = new BoardPosition(x, y);
+                        step.Movements.Add(new TileMovement(from, to, TileEntitySnapshot.From(above.Tile)));
                         cell.Tile = above.Tile;
                         above.Tile = null;
                         break;
@@ -251,7 +259,7 @@ namespace MatchThree.Core
             }
         }
 
-        private void Refill()
+        private void Refill(ResolveStep step)
         {
             for (var y = 0; y < _board.Height; y++)
             for (var x = 0; x < _board.Width; x++)
@@ -260,6 +268,7 @@ namespace MatchThree.Core
                 if (!c.IsPlayable || c.Tile != null) continue;
                 var color = ChooseRefillColor(x, y);
                 c.Tile = TileEntity.Piece(color);
+                step.Spawns.Add(new TileSpawn(new BoardPosition(x, y), y + 1, TileEntitySnapshot.From(c.Tile)));
             }
         }
 
