@@ -1,0 +1,17 @@
+{
+  "name": "MatchThree.Runtime",
+  "rootNamespace": "MatchThree.Runtime",
+  "references": [
+    "MatchThree.Core",
+    "UnityEngine.UI"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

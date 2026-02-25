@@ -1,0 +1,133 @@
+using System;
+using System.Collections.Generic;
+
+namespace MatchThree.Core
+{
+    public enum TileKind { Piece, Rock, Boulder, Statuette, Special }
+    public enum SpecialType { None, RocketHorizontal, RocketVertical, Bomb, SuperLightning }
+
+    public readonly struct BoardPosition : IEquatable<BoardPosition>
+    {
+        public readonly int X;
+        public readonly int Y;
+        public BoardPosition(int x, int y) { X = x; Y = y; }
+        public bool Equals(BoardPosition other) => X == other.X && Y == other.Y;
+        public override bool Equals(object obj) => obj is BoardPosition other && Equals(other);
+        public override int GetHashCode() => HashCode.Combine(X, Y);
+        public static bool operator ==(BoardPosition a, BoardPosition b) => a.Equals(b);
+        public static bool operator !=(BoardPosition a, BoardPosition b) => !a.Equals(b);
+    }
+
+    public readonly struct Move
+    {
+        public readonly BoardPosition From;
+        public readonly BoardPosition To;
+        public Move(BoardPosition from, BoardPosition to) { From = from; To = to; }
+    }
+
+    public sealed class TileEntity
+    {
+        public TileKind Kind;
+        public int ColorId;
+        public SpecialType SpecialType;
+
+        public static TileEntity Piece(int colorId) => new TileEntity { Kind = TileKind.Piece, ColorId = colorId };
+        public static TileEntity Rock() => new TileEntity { Kind = TileKind.Rock };
+        public static TileEntity Boulder() => new TileEntity { Kind = TileKind.Boulder };
+        public static TileEntity Statuette() => new TileEntity { Kind = TileKind.Statuette };
+        public static TileEntity Special(SpecialType type) => new TileEntity { Kind = TileKind.Special, SpecialType = type };
+
+        public TileEntity Clone() => new TileEntity { Kind = Kind, ColorId = ColorId, SpecialType = SpecialType };
+        public bool IsColoredPiece => Kind == TileKind.Piece;
+        public bool IsSwappable => Kind == TileKind.Piece || Kind == TileKind.Special;
+        public bool IsMovable => Kind == TileKind.Piece || Kind == TileKind.Special || Kind == TileKind.Statuette;
+    }
+
+    public sealed class Cell
+    {
+        public bool IsPlayable;
+        public TileEntity Tile;
+    }
+
+    public interface IRandom
+    {
+        int NextInt(int minInclusive, int maxExclusive);
+    }
+
+    public sealed class SeededRandom : IRandom
+    {
+        private readonly Random _random;
+        public SeededRandom(int seed) { _random = new Random(seed); }
+        public int NextInt(int minInclusive, int maxExclusive) => _random.Next(minInclusive, maxExclusive);
+    }
+
+    public sealed class Board
+    {
+        private static readonly BoardPosition[] OrthoDirs =
+        {
+            new BoardPosition(1,0), new BoardPosition(-1,0), new BoardPosition(0,1), new BoardPosition(0,-1)
+        };
+
+        public int Width { get; }
+        public int Height { get; }
+        public Cell[,] Cells { get; }
+        public IReadOnlyList<int> AvailableColors { get; }
+
+        public Board(int width, int height, IReadOnlyList<int> availableColors)
+        {
+            Width = width;
+            Height = height;
+            AvailableColors = availableColors;
+            Cells = new Cell[width, height];
+            for (var y = 0; y < height; y++)
+            for (var x = 0; x < width; x++)
+                Cells[x, y] = new Cell();
+        }
+
+        public bool InBounds(BoardPosition p) => p.X >= 0 && p.Y >= 0 && p.X < Width && p.Y < Height;
+        public Cell CellAt(BoardPosition p) => Cells[p.X, p.Y];
+        public bool IsOrthAdjacent(BoardPosition a, BoardPosition b) => Math.Abs(a.X - b.X) + Math.Abs(a.Y - b.Y) == 1;
+
+        public IEnumerable<BoardPosition> OrthogonalNeighbors(BoardPosition p)
+        {
+            foreach (var d in OrthoDirs)
+            {
+                var n = new BoardPosition(p.X + d.X, p.Y + d.Y);
+                if (InBounds(n)) yield return n;
+            }
+        }
+
+        public void Swap(BoardPosition a, BoardPosition b)
+        {
+            var tmp = CellAt(a).Tile;
+            CellAt(a).Tile = CellAt(b).Tile;
+            CellAt(b).Tile = tmp;
+        }
+
+        public bool IsBottomMostReachable(BoardPosition p)
+        {
+            if (!CellAt(p).IsPlayable) return false;
+            for (var y = p.Y + 1; y < Height; y++)
+            {
+                if (Cells[p.X, y].IsPlayable) return false;
+            }
+            return true;
+        }
+    }
+
+    public sealed class ResolveStep
+    {
+        public readonly List<BoardPosition> Removed = new();
+        public readonly List<BoardPosition> DamagedObstacles = new();
+        public readonly List<BoardPosition> DestroyedObstacles = new();
+        public readonly List<(BoardPosition Position, SpecialType Type)> CreatedSpecials = new();
+        public bool DidChange => Removed.Count > 0 || DamagedObstacles.Count > 0 || DestroyedObstacles.Count > 0 || CreatedSpecials.Count > 0;
+    }
+
+    public sealed class MoveResult
+    {
+        public bool Performed;
+        public bool Reverted;
+        public readonly List<ResolveStep> Steps = new();
+    }
+}
