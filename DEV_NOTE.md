@@ -67,3 +67,14 @@
 - Clear-rock goal completion rule is: **zero Rock and zero Boulder entities remain on the board**.
 - Initialization count treats each `Rock` and `Boulder` tile as 1 remaining obstacle.
 - Boulder damage (`Boulder -> Rock`) does not decrement the goal yet because an obstacle still remains.
+
+## A4 win/lose overlays and level flow
+- Runtime now owns a simple ordered level path list in `MatchThreeGameController.levelResourcePaths`.
+  - Default order: `Levels/level_000`, `Levels/level_001`, `Levels/level_002`.
+- `currentLevelIndex` is tracked at runtime.
+  - **Retry** reloads the current index and reinitializes board, moves, and goals.
+  - **Next** increments index and wraps to the first level when it passes the end.
+- Two Canvas overlays were added in runtime-created UI:
+  - `WinPanel` with `You Win!` + `Next` button.
+  - `LosePanel` with `You Lose!` + `Retry` button.
+- Overlays are shown only when game state enters `Won`/`Lost`; they are hidden after level initialization.
