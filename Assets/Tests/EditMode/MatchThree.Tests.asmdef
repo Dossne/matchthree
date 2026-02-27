@@ -2,7 +2,8 @@
     "name": "MatchThree.Tests",
     "rootNamespace": "MatchThree.Tests",
     "references": [
-        "MatchThree.Core"
+        "MatchThree.Core",
+        "MatchThree.Runtime"
     ],
     "includePlatforms": [
         "Editor"

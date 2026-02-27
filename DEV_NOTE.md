@@ -53,7 +53,7 @@
 - Core now supports two goal types:
   - `CollectColorGoalDefinition(colorId, targetCount)`
   - `ClearAllRocksGoalDefinition()`
-- Runtime currently configures goals in `MatchThreeGameController.BuildGoalDefinitions()` (hardcoded until level goal config exists).
+- Runtime goals now come from `Assets/Resources/Levels/level_registry.json` per level entry.
 - Goal progress is tracked by `GoalTracker`, initialized from board state and updated after each resolved player move.
 
 ### Goal update events
@@ -69,8 +69,7 @@
 - Boulder damage (`Boulder -> Rock`) does not decrement the goal yet because an obstacle still remains.
 
 ## A4 win/lose overlays and level flow
-- Runtime now owns a simple ordered level path list in `MatchThreeGameController.levelResourcePaths`.
-  - Default order: `Levels/level_000`, `Levels/level_001`, `Levels/level_002`.
+- Runtime loads level order from `Assets/Resources/Levels/level_registry.json`.
 - `currentLevelIndex` is tracked at runtime.
   - **Retry** reloads the current index and reinitializes board, moves, and goals.
   - **Next** increments index and wraps to the first level when it passes the end.
@@ -108,3 +107,27 @@
   - `Filter Mode = Bilinear` (chosen for smooth/cartoon art)
   - `Mip Maps = Disabled`
 - For larger/smaller on-board icons, tweak `IconInset` in `MatchThreeGameController` (0 to 2 is the intended range).
+
+## Level registry + per-level config (A5)
+- Runtime level order and per-level rules now come from `Assets/Resources/Levels/level_registry.json`.
+- Each entry defines:
+  - `levelPath` (e.g. `Levels/level_001`)
+  - `maxMoves`
+  - `goals[]` with:
+    - `{ "type": "CollectColor", "colorId": <id>, "target": <count> }`
+    - `{ "type": "ClearAllRocks" }`
+- `MatchThreeGameController` loads registry entries, then for each level loads the matching ASCII board `TextAsset` from `Resources`.
+- Retry/Next behavior:
+  - **Retry** reloads the current level index.
+  - **Next** advances index and wraps to `0` after the last level.
+  - If `levelAsset` override is set in the inspector, that override is inserted as index `0` and registry levels follow it.
+
+### How to add a new level
+1. Add a new ASCII file under `Assets/Resources/Levels/`, for example `level_003.txt`.
+2. Add a new entry in `Assets/Resources/Levels/level_registry.json` with:
+   - `"levelPath": "Levels/level_003"`
+   - desired `maxMoves`
+   - goal list.
+3. Keep goals achievable:
+   - include `ClearAllRocks` only if the board has `R`/`B` tiles.
+   - keep collect targets realistic for the board size + move limit.

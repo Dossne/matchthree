@@ -170,3 +170,18 @@ removes all pieces of that matched color from the board
 may also apply damage to obstacles adjacent to removed pieces (if your damage system supports it)
 
 This acts like a “color bomb” / “color clearer”.
+
+---
+
+## Runtime level progression config
+
+Level order, move limits, and goals are configured in:
+- `Assets/Resources/Levels/level_registry.json`
+
+Each level entry uses:
+- `levelPath` → ASCII board at `Assets/Resources/<levelPath>.txt`
+- `maxMoves`
+- `goals` array (`CollectColor`, `ClearAllRocks`)
+
+`Next` advances to the next registry level and loops back to level 0 after the last level.
+`Retry` reloads the current level index.
