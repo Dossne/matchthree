@@ -36,9 +36,6 @@ namespace MatchThree.Runtime
         private readonly HashSet<string> _loggedMissingSpriteKeys = new();
         private BoardPosition? _selected;
         private bool _isAnimating;
-        private LevelRuntimeConfig _runtimeConfig;
-        private MoveCounter _moveCounter;
-        private Text _movesCounter;
         private GoalTracker _goalTracker;
 
         private sealed class CellView
