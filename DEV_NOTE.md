@@ -37,6 +37,11 @@
 ## Match debugging helper
 - Press `M` in play mode to log current detected match groups and coordinates.
 
+## Move limit UI counter
+- Runtime has a move budget configured in `MatchThreeGameController` via `maxMoves`.
+- A `MoveCounter` tracks remaining turns and updates an on-screen `Moves` text label.
+- Valid (non-reverted) player moves consume one move; when the budget reaches zero, input is blocked.
+
 ## Goal system (A1)
 - Core now supports two goal types:
   - `CollectColorGoalDefinition(colorId, targetCount)`

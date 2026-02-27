@@ -20,6 +20,7 @@ namespace MatchThree.Runtime
         [SerializeField] private TextAsset levelAsset;
         [SerializeField] private string levelResourcePath = "Levels/level_000";
         [SerializeField] private int randomSeed = 1234;
+        [SerializeField] private int maxMoves = 20;
 
         private Board _board;
         private BoardResolver _resolver;
@@ -28,6 +29,9 @@ namespace MatchThree.Runtime
         private RectTransform _animationLayer;
         private Text _status;
         private Text _goalsText;
+        private LevelRuntimeConfig _runtimeConfig;
+        private MoveCounter _moveCounter;
+        private Text _movesCounter;
         private readonly Dictionary<BoardPosition, CellView> _cells = new();
         private readonly HashSet<string> _loggedMissingSpriteKeys = new();
         private BoardPosition? _selected;
@@ -68,12 +72,15 @@ namespace MatchThree.Runtime
             _board = LevelParser.Parse(asset.text, new[] { 1, 2, 3, 4 });
             _resolver = new BoardResolver(_board, new SeededRandom(randomSeed));
             _resolver.FillBoardWithoutInitialMatches();
+            _runtimeConfig = new LevelRuntimeConfig(maxMoves);
+            _moveCounter = new MoveCounter(_runtimeConfig.MaxMoves);
             _goalTracker = new GoalTracker(BuildGoalDefinitions());
             _goalTracker.Initialize(_board);
             _spriteLibrary = TileSpriteLibrary.LoadFromTilesFolder();
 
             BuildGrid();
             Render();
+            RefreshMovesUi();
             RefreshGoalsUi();
         }
 
@@ -157,6 +164,19 @@ namespace MatchThree.Runtime
             grt.pivot = new Vector2(0.5f, 1);
             grt.offsetMin = new Vector2(20, -180);
             grt.offsetMax = new Vector2(-20, -90);
+
+            var movesGo = new GameObject("Moves");
+            movesGo.transform.SetParent(canvas.transform, false);
+            _movesCounter = movesGo.AddComponent<Text>();
+            _movesCounter.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            _movesCounter.alignment = TextAnchor.UpperCenter;
+            _movesCounter.color = Color.white;
+            var mrt = _movesCounter.rectTransform;
+            mrt.anchorMin = new Vector2(0, 1);
+            mrt.anchorMax = new Vector2(1, 1);
+            mrt.pivot = new Vector2(0.5f, 1);
+            mrt.offsetMin = new Vector2(20, -220);
+            mrt.offsetMax = new Vector2(-20, -180);
         }
 
         private void BuildGrid()
@@ -220,6 +240,11 @@ namespace MatchThree.Runtime
         private void OnCellClicked(BoardPosition pos)
         {
             if (_isAnimating) return;
+            if (_moveCounter != null && !_moveCounter.HasMovesRemaining)
+            {
+                _status.text = "No moves remaining.";
+                return;
+            }
 
             if (_selected == null)
             {
@@ -271,6 +296,8 @@ namespace MatchThree.Runtime
             }
 
             _goalTracker.ApplyMoveResult(result);
+            _moveCounter.TryConsumeMove();
+            RefreshMovesUi();
             RefreshGoalsUi();
 
             _status.text = $"Resolved steps: {result.Steps.Count}. Delivered: {_resolver.AreAllStatuettesDelivered()}";
@@ -706,6 +733,46 @@ namespace MatchThree.Runtime
             }
 
             _goalsText.text = string.Join("\n", lines);
+        }
+
+        private void RefreshMovesUi()
+        {
+            if (_movesCounter == null || _moveCounter == null) return;
+            _movesCounter.text = $"Moves: {_moveCounter.MovesRemaining}/{_moveCounter.MaxMoves}";
+        }
+
+        private sealed class LevelRuntimeConfig
+        {
+            public int MaxMoves { get; }
+
+            public LevelRuntimeConfig(int maxMoves)
+            {
+                MaxMoves = Mathf.Max(1, maxMoves);
+            }
+        }
+
+        private sealed class MoveCounter
+        {
+            public int MaxMoves { get; }
+            public int MovesRemaining { get; private set; }
+            public bool HasMovesRemaining => MovesRemaining > 0;
+
+            public MoveCounter(int maxMoves)
+            {
+                MaxMoves = Mathf.Max(1, maxMoves);
+                MovesRemaining = MaxMoves;
+            }
+
+            public bool TryConsumeMove()
+            {
+                if (!HasMovesRemaining)
+                {
+                    return false;
+                }
+
+                MovesRemaining--;
+                return true;
+            }
         }
     }
 }
