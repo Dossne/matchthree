@@ -55,6 +55,8 @@ namespace MatchThree.Core
 
             var specialStep = TryResolveSpecialSwap(move);
             var matchExists = FindMatches().Any();
+            result.AnyMatches = matchExists;
+            result.AnySpecialActivated = specialStep != null;
             if (!matchExists && specialStep == null)
             {
                 _board.Swap(move.From, move.To);
