@@ -27,10 +27,12 @@ namespace MatchThree.Runtime
         private GridLayoutGroup _grid;
         private RectTransform _animationLayer;
         private Text _status;
+        private Text _goalsText;
         private readonly Dictionary<BoardPosition, CellView> _cells = new();
         private readonly HashSet<string> _loggedMissingSpriteKeys = new();
         private BoardPosition? _selected;
         private bool _isAnimating;
+        private GoalTracker _goalTracker;
 
         private sealed class CellView
         {
@@ -66,10 +68,13 @@ namespace MatchThree.Runtime
             _board = LevelParser.Parse(asset.text, new[] { 1, 2, 3, 4 });
             _resolver = new BoardResolver(_board, new SeededRandom(randomSeed));
             _resolver.FillBoardWithoutInitialMatches();
+            _goalTracker = new GoalTracker(BuildGoalDefinitions());
+            _goalTracker.Initialize(_board);
             _spriteLibrary = TileSpriteLibrary.LoadFromTilesFolder();
 
             BuildGrid();
             Render();
+            RefreshGoalsUi();
         }
 
         private void Update()
@@ -139,6 +144,19 @@ namespace MatchThree.Runtime
             _animationLayer.anchorMax = Vector2.one;
             _animationLayer.offsetMin = Vector2.zero;
             _animationLayer.offsetMax = Vector2.zero;
+
+            var goalsGo = new GameObject("Goals");
+            goalsGo.transform.SetParent(canvas.transform, false);
+            _goalsText = goalsGo.AddComponent<Text>();
+            _goalsText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            _goalsText.alignment = TextAnchor.UpperRight;
+            _goalsText.color = Color.white;
+            var grt = _goalsText.rectTransform;
+            grt.anchorMin = new Vector2(0, 1);
+            grt.anchorMax = new Vector2(1, 1);
+            grt.pivot = new Vector2(0.5f, 1);
+            grt.offsetMin = new Vector2(20, -180);
+            grt.offsetMax = new Vector2(-20, -90);
         }
 
         private void BuildGrid()
@@ -251,6 +269,9 @@ namespace MatchThree.Runtime
             {
                 yield return AnimateResolveStep(step);
             }
+
+            _goalTracker.ApplyMoveResult(result);
+            RefreshGoalsUi();
 
             _status.text = $"Resolved steps: {result.Steps.Count}. Delivered: {_resolver.AreAllStatuettesDelivered()}";
             _isAnimating = false;
@@ -658,5 +679,33 @@ namespace MatchThree.Runtime
             5 => new Color(0.8f, 0.2f, 0.8f),
             _ => Color.white
         };
+
+        private IEnumerable<GoalDefinition> BuildGoalDefinitions()
+        {
+            // Temporary hardcoded setup until level config data exists.
+            yield return new CollectColorGoalDefinition(1, 10);
+            yield return new ClearAllRocksGoalDefinition();
+        }
+
+        private void RefreshGoalsUi()
+        {
+            if (_goalsText == null || _goalTracker == null) return;
+
+            var lines = new List<string> { "Goals:" };
+            foreach (var progress in _goalTracker.GetProgress())
+            {
+                switch (progress)
+                {
+                    case CollectColorProgress collect:
+                        lines.Add($"- Collect color {collect.ColorId}: {collect.Current}/{collect.Target}");
+                        break;
+                    case ClearAllRocksProgress rocks:
+                        lines.Add($"- Clear Rocks: {rocks.RemainingRocks} remaining");
+                        break;
+                }
+            }
+
+            _goalsText.text = string.Join("\n", lines);
+        }
     }
 }

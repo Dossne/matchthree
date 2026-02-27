@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace MatchThree.Core
 {
     public enum TileKind { Piece, Rock, Boulder, Statuette, Special }
     public enum SpecialType { None, RocketHorizontal, RocketVertical, Bomb, SuperLightning }
+    public enum GoalType { CollectColor, ClearAllRocks }
 
     public readonly struct BoardPosition : IEquatable<BoardPosition>
     {
@@ -123,8 +125,28 @@ namespace MatchThree.Core
         public readonly List<TileSpawn> Spawns = new();
         public readonly List<BoardPosition> DamagedObstacles = new();
         public readonly List<BoardPosition> DestroyedObstacles = new();
+        public readonly List<DestroyedObstacleInfo> DestroyedObstacleDetails = new();
         public readonly List<(BoardPosition Position, SpecialType Type)> CreatedSpecials = new();
+        public readonly ResolveStepSummary Summary = new();
         public bool DidChange => Removed.Count > 0 || DamagedObstacles.Count > 0 || DestroyedObstacles.Count > 0 || CreatedSpecials.Count > 0 || Movements.Count > 0 || Spawns.Count > 0;
+    }
+
+    public readonly struct DestroyedObstacleInfo
+    {
+        public readonly BoardPosition Position;
+        public readonly TileKind Kind;
+
+        public DestroyedObstacleInfo(BoardPosition position, TileKind kind)
+        {
+            Position = position;
+            Kind = kind;
+        }
+    }
+
+    public sealed class ResolveStepSummary
+    {
+        public readonly Dictionary<int, int> ClearedPiecesByColor = new();
+        public readonly Dictionary<TileKind, int> DestroyedObstaclesByType = new();
     }
 
     public readonly struct TileEntitySnapshot
@@ -179,5 +201,158 @@ namespace MatchThree.Core
         public TileEntitySnapshot? SwapFromTile;
         public TileEntitySnapshot? SwapToTile;
         public readonly List<ResolveStep> Steps = new();
+    }
+
+    public abstract class GoalDefinition
+    {
+        public abstract GoalType GoalType { get; }
+    }
+
+    public sealed class CollectColorGoalDefinition : GoalDefinition
+    {
+        public override GoalType GoalType => GoalType.CollectColor;
+        public int ColorId { get; }
+        public int TargetCount { get; }
+
+        public CollectColorGoalDefinition(int colorId, int targetCount)
+        {
+            ColorId = colorId;
+            TargetCount = targetCount;
+        }
+    }
+
+    public sealed class ClearAllRocksGoalDefinition : GoalDefinition
+    {
+        public override GoalType GoalType => GoalType.ClearAllRocks;
+    }
+
+    public abstract class GoalProgress
+    {
+        public GoalType GoalType { get; protected set; }
+        public bool IsComplete { get; protected set; }
+    }
+
+    public sealed class CollectColorProgress : GoalProgress
+    {
+        public int ColorId { get; }
+        public int Current { get; private set; }
+        public int Target { get; }
+
+        public CollectColorProgress(int colorId, int target)
+        {
+            GoalType = GoalType.CollectColor;
+            ColorId = colorId;
+            Target = target;
+            Current = 0;
+            IsComplete = target <= 0;
+        }
+
+        public void Increment(int amount)
+        {
+            if (amount <= 0 || IsComplete) return;
+            Current = Math.Min(Target, Current + amount);
+            IsComplete = Current >= Target;
+        }
+    }
+
+    public sealed class ClearAllRocksProgress : GoalProgress
+    {
+        public int RemainingRocks { get; private set; }
+
+        public ClearAllRocksProgress()
+        {
+            GoalType = GoalType.ClearAllRocks;
+        }
+
+        public void SetRemaining(int remaining)
+        {
+            RemainingRocks = Math.Max(0, remaining);
+            IsComplete = RemainingRocks == 0;
+        }
+
+        public void Decrement(int amount)
+        {
+            if (amount <= 0 || IsComplete) return;
+            SetRemaining(RemainingRocks - amount);
+        }
+    }
+
+    public sealed class GoalTracker
+    {
+        private readonly List<GoalProgress> _progress = new();
+
+        public GoalTracker(IEnumerable<GoalDefinition> definitions)
+        {
+            foreach (var definition in definitions)
+            {
+                switch (definition)
+                {
+                    case CollectColorGoalDefinition collect:
+                        _progress.Add(new CollectColorProgress(collect.ColorId, collect.TargetCount));
+                        break;
+                    case ClearAllRocksGoalDefinition:
+                        _progress.Add(new ClearAllRocksProgress());
+                        break;
+                }
+            }
+        }
+
+        public void Initialize(Board board)
+        {
+            var rockCount = 0;
+            for (var y = 0; y < board.Height; y++)
+            for (var x = 0; x < board.Width; x++)
+            {
+                var tile = board.Cells[x, y].Tile;
+                if (tile == null) continue;
+                if (tile.Kind == TileKind.Rock || tile.Kind == TileKind.Boulder) rockCount++;
+            }
+
+            foreach (var goal in _progress.OfType<ClearAllRocksProgress>())
+            {
+                goal.SetRemaining(rockCount);
+            }
+        }
+
+        public void ApplyStepSummary(ResolveStepSummary summary)
+        {
+            foreach (var goal in _progress)
+            {
+                switch (goal)
+                {
+                    case CollectColorProgress collect:
+                        if (summary.ClearedPiecesByColor.TryGetValue(collect.ColorId, out var count))
+                        {
+                            collect.Increment(count);
+                        }
+                        break;
+                    case ClearAllRocksProgress rocks:
+                    {
+                        var destroyed = 0;
+                        if (summary.DestroyedObstaclesByType.TryGetValue(TileKind.Rock, out var rockDestroyed))
+                        {
+                            destroyed += rockDestroyed;
+                        }
+                        if (summary.DestroyedObstaclesByType.TryGetValue(TileKind.Boulder, out var boulderDestroyed))
+                        {
+                            destroyed += boulderDestroyed;
+                        }
+                        rocks.Decrement(destroyed);
+                        break;
+                    }
+                }
+            }
+        }
+
+        public void ApplyMoveResult(MoveResult result)
+        {
+            foreach (var step in result.Steps)
+            {
+                ApplyStepSummary(step.Summary);
+            }
+        }
+
+        public IReadOnlyList<GoalProgress> GetProgress() => _progress;
+        public bool AllComplete => _progress.Count > 0 && _progress.All(g => g.IsComplete);
     }
 }
