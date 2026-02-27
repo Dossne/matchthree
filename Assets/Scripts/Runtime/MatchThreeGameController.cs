@@ -36,7 +36,9 @@ namespace MatchThree.Runtime
         private readonly HashSet<string> _loggedMissingSpriteKeys = new();
         private BoardPosition? _selected;
         private bool _isAnimating;
+        private bool _isInputBlocked;
         private GoalTracker _goalTracker;
+        private GameStateController _gameStateController;
 
         private sealed class CellView
         {
@@ -71,20 +73,17 @@ namespace MatchThree.Runtime
 
             _board = LevelParser.Parse(asset.text, new[] { 1, 2, 3, 4 });
             _resolver = new BoardResolver(_board, new SeededRandom(randomSeed));
-            _runtimeConfig = new LevelRuntimeConfig();
+            _runtimeConfig = new LevelRuntimeConfig { MaxMoves = maxMoves };
             _moveCounter = new MoveCounter(_runtimeConfig.MaxMoves);
-            _moveCounter.Reset();
             _resolver.FillBoardWithoutInitialMatches();
-            _runtimeConfig = new LevelRuntimeConfig(maxMoves);
-            _moveCounter = new MoveCounter(_runtimeConfig.MaxMoves);
             _goalTracker = new GoalTracker(BuildGoalDefinitions());
             _goalTracker.Initialize(_board);
+            _gameStateController = new GameStateController(_goalTracker, _moveCounter);
             _spriteLibrary = TileSpriteLibrary.LoadFromTilesFolder();
 
             BuildGrid();
             UpdateMovesCounterLabel();
             Render();
-            RefreshMovesUi();
             RefreshGoalsUi();
         }
 
@@ -256,10 +255,8 @@ namespace MatchThree.Runtime
 
         private void OnCellClicked(BoardPosition pos)
         {
-            if (_isAnimating) return;
-            if (_moveCounter != null && !_moveCounter.HasMovesRemaining)
+            if (_isAnimating || _isInputBlocked)
             {
-                _status.text = "No moves remaining.";
                 return;
             }
 
@@ -307,23 +304,20 @@ namespace MatchThree.Runtime
                 yield break;
             }
 
-            _moveCounter.ConsumeIfAccepted(result);
-            UpdateMovesCounterLabel();
-
             foreach (var step in result.Steps)
             {
                 yield return AnimateResolveStep(step);
             }
 
+            _moveCounter.ConsumeIfAccepted(result);
             _goalTracker.ApplyMoveResult(result);
-            _moveCounter.TryConsumeMove();
-            RefreshMovesUi();
+            UpdateMovesCounterLabel();
             RefreshGoalsUi();
+            UpdateStatusAfterEvaluation();
 
-            _status.text = $"Resolved steps: {result.Steps.Count}. Delivered: {_resolver.AreAllStatuettesDelivered()}";
             _isAnimating = false;
             Render();
-            SetInputEnabled(true);
+            SetInputEnabled(_gameStateController.State == GameState.Playing);
         }
 
         private IEnumerator AnimateSwap(BoardPosition from, BoardPosition to, TileEntitySnapshot? fromTile, TileEntitySnapshot? toTile, bool animateBack)
@@ -470,7 +464,7 @@ namespace MatchThree.Runtime
 
         private void SetInputEnabled(bool enabled)
         {
-            _isAnimating = !enabled;
+            _isInputBlocked = !enabled;
             Render();
         }
 
@@ -489,7 +483,24 @@ namespace MatchThree.Runtime
                     view.Background.color = new Color(1f, 1f, 1f, 0.35f);
                 }
 
-                view.Button.interactable = !_isAnimating && cell.IsPlayable;
+                view.Button.interactable = !_isAnimating && !_isInputBlocked && cell.IsPlayable;
+            }
+        }
+
+        private void UpdateStatusAfterEvaluation()
+        {
+            var state = _gameStateController.EvaluateAfterMove();
+            switch (state)
+            {
+                case GameState.Won:
+                    _status.text = "You win!";
+                    break;
+                case GameState.Lost:
+                    _status.text = "You lose! Out of moves.";
+                    break;
+                default:
+                    _status.text = "Make a move.";
+                    break;
             }
         }
 
@@ -765,44 +776,5 @@ namespace MatchThree.Runtime
             _goalsText.text = string.Join("\n", lines);
         }
 
-        private void RefreshMovesUi()
-        {
-            if (_movesCounter == null || _moveCounter == null) return;
-            _movesCounter.text = $"Moves: {_moveCounter.MovesRemaining}/{_moveCounter.MaxMoves}";
-        }
-
-        private sealed class LevelRuntimeConfig
-        {
-            public int MaxMoves { get; }
-
-            public LevelRuntimeConfig(int maxMoves)
-            {
-                MaxMoves = Mathf.Max(1, maxMoves);
-            }
-        }
-
-        private sealed class MoveCounter
-        {
-            public int MaxMoves { get; }
-            public int MovesRemaining { get; private set; }
-            public bool HasMovesRemaining => MovesRemaining > 0;
-
-            public MoveCounter(int maxMoves)
-            {
-                MaxMoves = Mathf.Max(1, maxMoves);
-                MovesRemaining = MaxMoves;
-            }
-
-            public bool TryConsumeMove()
-            {
-                if (!HasMovesRemaining)
-                {
-                    return false;
-                }
-
-                MovesRemaining--;
-                return true;
-            }
-        }
     }
 }
