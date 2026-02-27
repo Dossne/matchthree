@@ -23,20 +23,13 @@ namespace MatchThree.Runtime
         private const float BoardWidthUsage = 0.90f;
         private const float BoardHeightUsage = 0.96f;
 
-        // Icon padding inside cell (0 = ìàêñèìàëüíî êðóïíî)
+        // Icon padding inside cell (0 = Ã¬Ã ÃªÃ±Ã¨Ã¬Ã Ã«Ã¼Ã­Ã® ÃªÃ°Ã³Ã¯Ã­Ã®)
         private const float IconInset = 0f;
 
         [SerializeField] private TextAsset levelAsset;
-        [SerializeField] private string levelResourcePath = "Levels/level_000";
-        [SerializeField]
-        private string[] levelResourcePaths =
-        {
-            "Levels/level_000",
-            "Levels/level_001",
-            "Levels/level_002"
-        };
+        [SerializeField] private TextAsset levelConfigAsset;
+        [SerializeField] private LevelRegistry levelRegistry = new();
         [SerializeField] private int randomSeed = 1234;
-        [SerializeField] private int maxMoves = 20;
 
         private Board _board;
         private BoardResolver _resolver;
@@ -60,6 +53,7 @@ namespace MatchThree.Runtime
         private GameObject _winPanel;
         private GameObject _losePanel;
         private int _currentLevelIndex;
+        private List<RuntimeLevelData> _levels = new();
 
         private readonly Dictionary<BoardPosition, CellView> _cells = new();
         private readonly HashSet<string> _loggedMissingSpriteKeys = new();
@@ -76,6 +70,20 @@ namespace MatchThree.Runtime
             public Image Icon;
             public Text Label;
             public CanvasGroup Group;
+        }
+
+        private readonly struct RuntimeLevelData
+        {
+            public readonly string Name;
+            public readonly TextAsset Asset;
+            public readonly LevelDefinition Config;
+
+            public RuntimeLevelData(string name, TextAsset asset, LevelDefinition config)
+            {
+                Name = name;
+                Asset = asset;
+                Config = config;
+            }
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -96,16 +104,14 @@ namespace MatchThree.Runtime
 
             _spriteLibrary = TileSpriteLibrary.LoadFromTilesFolder();
 
-            _currentLevelIndex = ResolveInitialLevelIndex();
-            var asset = LoadLevelAsset(_currentLevelIndex);
-
-            if (asset == null)
+            if (!TryBuildLevelList(out var error))
             {
-                _status.text = $"Missing level asset at Resources/{CurrentLevelPath()}";
+                _status.text = error;
                 return;
             }
 
-            InitializeLevel(asset);
+            _currentLevelIndex = 0;
+            InitializeLevel(_levels[_currentLevelIndex]);
         }
 
         private void Update()
@@ -242,20 +248,20 @@ namespace MatchThree.Runtime
             ShowOverlay(null);
         }
 
-        private void InitializeLevel(TextAsset asset)
+        private void InitializeLevel(RuntimeLevelData level)
         {
             _selected = null;
             _isAnimating = false;
             _isInputBlocked = false;
             ShowOverlay(null);
 
-            _board = LevelParser.Parse(asset.text, new[] { 1, 2, 3, 4 });
+            _board = LevelParser.Parse(level.Asset.text, new[] { 1, 2, 3, 4 });
             _resolver = new BoardResolver(_board, new SeededRandom(randomSeed));
 
-            _moveCounter = new MatchThree.Core.MoveCounter(maxMoves);
+            _moveCounter = new MatchThree.Core.MoveCounter(level.Config.MaxMoves);
             _resolver.FillBoardWithoutInitialMatches();
 
-            _goalTracker = new GoalTracker(BuildGoalDefinitions());
+            _goalTracker = new GoalTracker(level.Config.Goals);
             _goalTracker.Initialize(_board);
 
             _gameStateController = new GameStateController(_goalTracker, _moveCounter);
@@ -269,97 +275,106 @@ namespace MatchThree.Runtime
             Render();
         }
 
-        private int ResolveInitialLevelIndex()
+        private bool TryBuildLevelList(out string error)
         {
+            error = null;
+            _levels.Clear();
+
             if (levelAsset != null)
             {
-                return 0;
+                _levels.Add(new RuntimeLevelData(levelAsset.name, levelAsset, BuildInspectorLevelConfig()));
             }
 
-            if (levelResourcePaths == null || levelResourcePaths.Length == 0)
+            IReadOnlyList<LevelDefinition> registryDefinitions;
+            try
             {
-                levelResourcePaths = new[] { levelResourcePath };
+                registryDefinitions = levelRegistry.LoadDefinitions();
             }
-
-            for (var i = 0; i < levelResourcePaths.Length; i++)
+            catch (System.Exception ex)
             {
-                if (levelResourcePaths[i] == levelResourcePath)
+                if (_levels.Count > 0)
                 {
-                    return i;
+                    return true;
+                }
+
+                error = ex.Message;
+                return false;
+            }
+
+            foreach (var definition in registryDefinitions)
+            {
+                var asset = Resources.Load<TextAsset>(definition.LevelPath);
+                if (asset == null)
+                {
+                    error = $"Missing level asset at Resources/{definition.LevelPath}";
+                    return false;
+                }
+
+                _levels.Add(new RuntimeLevelData(definition.LevelPath, asset, definition));
+            }
+
+            if (_levels.Count == 0)
+            {
+                error = "No playable levels were found.";
+                return false;
+            }
+
+            return true;
+        }
+
+        private LevelDefinition BuildInspectorLevelConfig()
+        {
+            if (levelConfigAsset == null)
+            {
+                return new LevelDefinition
+                {
+                    LevelPath = levelAsset != null ? levelAsset.name : "InspectorLevel",
+                    MaxMoves = 20,
+                    Goals = new List<GoalDefinition>
+                    {
+                        new CollectColorGoalDefinition(1, 10)
+                    }
+                };
+            }
+
+            var data = JsonUtility.FromJson<InspectorLevelConfigData>(levelConfigAsset.text);
+            var definition = new LevelDefinition
+            {
+                LevelPath = levelAsset != null ? levelAsset.name : "InspectorLevel",
+                MaxMoves = data.maxMoves,
+                Goals = new List<GoalDefinition>()
+            };
+
+            if (data.goals != null)
+            {
+                foreach (var goal in data.goals)
+                {
+                    if (goal.type == "CollectColor")
+                    {
+                        definition.Goals.Add(new CollectColorGoalDefinition(goal.colorId, goal.target));
+                    }
+                    else if (goal.type == "ClearAllRocks")
+                    {
+                        definition.Goals.Add(new ClearAllRocksGoalDefinition());
+                    }
                 }
             }
 
-            return 0;
-        }
-
-        private string CurrentLevelPath()
-        {
-            if (levelAsset != null)
-            {
-                return levelAsset.name;
-            }
-
-            if (levelResourcePaths == null || levelResourcePaths.Length == 0)
-            {
-                return levelResourcePath;
-            }
-
-            if (_currentLevelIndex < 0 || _currentLevelIndex >= levelResourcePaths.Length)
-            {
-                return levelResourcePaths[0];
-            }
-
-            return levelResourcePaths[_currentLevelIndex];
-        }
-
-        private TextAsset LoadLevelAsset(int index)
-        {
-            if (levelAsset != null)
-            {
-                return levelAsset;
-            }
-
-            if (levelResourcePaths == null || levelResourcePaths.Length == 0)
-            {
-                return Resources.Load<TextAsset>(levelResourcePath);
-            }
-
-            var clampedIndex = (index % levelResourcePaths.Length + levelResourcePaths.Length) % levelResourcePaths.Length;
-            var path = levelResourcePaths[clampedIndex];
-            return Resources.Load<TextAsset>(path);
+            return definition;
         }
 
         private void RetryLevel()
         {
             if (_isAnimating) return;
-
-            var asset = LoadLevelAsset(_currentLevelIndex);
-            if (asset == null)
-            {
-                _status.text = $"Missing level asset at Resources/{CurrentLevelPath()}";
-                return;
-            }
-
-            InitializeLevel(asset);
+            InitializeLevel(_levels[_currentLevelIndex]);
         }
 
         private void LoadNextLevel()
         {
             if (_isAnimating) return;
 
-            if (levelAsset == null && levelResourcePaths != null && levelResourcePaths.Length > 0)
-            {
-                _currentLevelIndex = (_currentLevelIndex + 1) % levelResourcePaths.Length;
-            }
-
-            var asset = LoadLevelAsset(_currentLevelIndex);
-            if (asset == null)
-            {
-                _status.text = $"Missing level asset at Resources/{CurrentLevelPath()}";
-                return;
-            }
-
-            InitializeLevel(asset);
+            _currentLevelIndex = (_currentLevelIndex + 1) % _levels.Count;
+            InitializeLevel(_levels[_currentLevelIndex]);
         }
 
         private void ShowOverlay(GameState? state)
@@ -1042,12 +1057,6 @@ namespace MatchThree.Runtime
             5 => new Color(0.8f, 0.2f, 0.8f),
             _ => Color.white
         };
-
-        private IEnumerable<GoalDefinition> BuildGoalDefinitions()
-        {
-            yield return new CollectColorGoalDefinition(1, 10);
-            yield return new ClearAllRocksGoalDefinition();
-        }
 
         private void RefreshGoalsUi()
         {

@@ -1,0 +1,27 @@
+{
+  "levels": [
+    {
+      "levelPath": "Levels/level_000",
+      "maxMoves": 22,
+      "goals": [
+        { "type": "CollectColor", "colorId": 1, "target": 10 }
+      ]
+    },
+    {
+      "levelPath": "Levels/level_001",
+      "maxMoves": 24,
+      "goals": [
+        { "type": "CollectColor", "colorId": 2, "target": 12 },
+        { "type": "ClearAllRocks" }
+      ]
+    },
+    {
+      "levelPath": "Levels/level_002",
+      "maxMoves": 26,
+      "goals": [
+        { "type": "CollectColor", "colorId": 3, "target": 14 },
+        { "type": "ClearAllRocks" }
+      ]
+    }
+  ]
+}
