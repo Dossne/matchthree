@@ -101,7 +101,9 @@ namespace MatchThree.Core
                 {
                     if (_board.CellAt(p).Tile != null)
                     {
-                        step.RemovedTiles.Add((p, TileEntitySnapshot.From(_board.CellAt(p).Tile)));
+                        var removedTile = TileEntitySnapshot.From(_board.CellAt(p).Tile);
+                        step.RemovedTiles.Add((p, removedTile));
+                        AddRemovedTileToSummary(step.Summary, removedTile);
                         _board.CellAt(p).Tile = null;
                         step.Removed.Add(p);
                     }
@@ -194,7 +196,9 @@ namespace MatchThree.Core
             {
                 if (_board.CellAt(p).Tile != null)
                 {
-                    step.RemovedTiles.Add((p, TileEntitySnapshot.From(_board.CellAt(p).Tile)));
+                    var removedTile = TileEntitySnapshot.From(_board.CellAt(p).Tile);
+                    step.RemovedTiles.Add((p, removedTile));
+                    AddRemovedTileToSummary(step.Summary, removedTile);
                     _board.CellAt(p).Tile = null;
                     step.Removed.Add(p);
                 }
@@ -229,10 +233,26 @@ namespace MatchThree.Core
                 }
                 else if (t.Kind == TileKind.Rock)
                 {
+                    var destroyedKind = t.Kind;
                     _board.CellAt(p).Tile = null;
                     step.DestroyedObstacles.Add(p);
+                    step.DestroyedObstacleDetails.Add(new DestroyedObstacleInfo(p, destroyedKind));
+                    AddDestroyedObstacleToSummary(step.Summary, destroyedKind);
                 }
             }
+        }
+
+        private static void AddRemovedTileToSummary(ResolveStepSummary summary, TileEntitySnapshot tile)
+        {
+            if (tile.Kind != TileKind.Piece) return;
+            summary.ClearedPiecesByColor.TryGetValue(tile.ColorId, out var currentCount);
+            summary.ClearedPiecesByColor[tile.ColorId] = currentCount + 1;
+        }
+
+        private static void AddDestroyedObstacleToSummary(ResolveStepSummary summary, TileKind obstacleKind)
+        {
+            summary.DestroyedObstaclesByType.TryGetValue(obstacleKind, out var currentCount);
+            summary.DestroyedObstaclesByType[obstacleKind] = currentCount + 1;
         }
 
         private void ApplyGravity(ResolveStep step)

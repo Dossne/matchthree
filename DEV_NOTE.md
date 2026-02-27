@@ -44,3 +44,26 @@
   - Accepted = swap is performed and not reverted.
   - This includes either a normal match created by the swap or a booster activation from swapping specials.
   - Rejected swaps (no match and no special activation) are reverted and do not consume a move.
+## Move limit UI counter
+- Runtime has a move budget configured in `MatchThreeGameController` via `maxMoves`.
+- A `MoveCounter` tracks remaining turns and updates an on-screen `Moves` text label.
+- Valid (non-reverted) player moves consume one move; when the budget reaches zero, input is blocked.
+
+## Goal system (A1)
+- Core now supports two goal types:
+  - `CollectColorGoalDefinition(colorId, targetCount)`
+  - `ClearAllRocksGoalDefinition()`
+- Runtime currently configures goals in `MatchThreeGameController.BuildGoalDefinitions()` (hardcoded until level goal config exists).
+- Goal progress is tracked by `GoalTracker`, initialized from board state and updated after each resolved player move.
+
+### Goal update events
+- Resolver emits `ResolveStepSummary` per resolve step with:
+  - `ClearedPiecesByColor`
+  - `DestroyedObstaclesByType`
+- `CollectColor` increments from `ClearedPiecesByColor` for matches and special-effect clears alike (all piece removals are counted).
+- `ClearAllRocks` decrements from destroyed rock/boulder events.
+
+### Rock/Boulder counting rule
+- Clear-rock goal completion rule is: **zero Rock and zero Boulder entities remain on the board**.
+- Initialization count treats each `Rock` and `Boulder` tile as 1 remaining obstacle.
+- Boulder damage (`Boulder -> Rock`) does not decrement the goal yet because an obstacle still remains.
