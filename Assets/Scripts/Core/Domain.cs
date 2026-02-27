@@ -198,9 +198,21 @@ namespace MatchThree.Core
     {
         public bool Performed;
         public bool Reverted;
+        public bool AnyMatches;
+        public bool AnySpecialActivated;
         public TileEntitySnapshot? SwapFromTile;
         public TileEntitySnapshot? SwapToTile;
         public readonly List<ResolveStep> Steps = new();
+
+        public bool IsAccepted => Performed && !Reverted;
+    }
+
+    public sealed class LevelRuntimeConfig
+    {
+        public const int DefaultMaxMoves = 20;
+
+        // TODO: move MaxMoves into parsed level data once level metadata is supported.
+        public int MaxMoves = DefaultMaxMoves;
     }
 
     public abstract class GoalDefinition

@@ -36,6 +36,9 @@ namespace MatchThree.Runtime
         private readonly HashSet<string> _loggedMissingSpriteKeys = new();
         private BoardPosition? _selected;
         private bool _isAnimating;
+        private LevelRuntimeConfig _runtimeConfig;
+        private MoveCounter _moveCounter;
+        private Text _movesCounter;
         private GoalTracker _goalTracker;
 
         private sealed class CellView
@@ -71,6 +74,9 @@ namespace MatchThree.Runtime
 
             _board = LevelParser.Parse(asset.text, new[] { 1, 2, 3, 4 });
             _resolver = new BoardResolver(_board, new SeededRandom(randomSeed));
+            _runtimeConfig = new LevelRuntimeConfig();
+            _moveCounter = new MoveCounter(_runtimeConfig.MaxMoves);
+            _moveCounter.Reset();
             _resolver.FillBoardWithoutInitialMatches();
             _runtimeConfig = new LevelRuntimeConfig(maxMoves);
             _moveCounter = new MoveCounter(_runtimeConfig.MaxMoves);
@@ -79,6 +85,7 @@ namespace MatchThree.Runtime
             _spriteLibrary = TileSpriteLibrary.LoadFromTilesFolder();
 
             BuildGrid();
+            UpdateMovesCounterLabel();
             Render();
             RefreshMovesUi();
             RefreshGoalsUi();
@@ -134,6 +141,19 @@ namespace MatchThree.Runtime
             srt.pivot = new Vector2(0.5f, 1);
             srt.offsetMin = new Vector2(20, -80);
             srt.offsetMax = new Vector2(-20, -20);
+
+            var movesGo = new GameObject("MovesCounter");
+            movesGo.transform.SetParent(canvas.transform, false);
+            _movesCounter = movesGo.AddComponent<Text>();
+            _movesCounter.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            _movesCounter.alignment = TextAnchor.UpperRight;
+            _movesCounter.color = Color.white;
+            var mrt = _movesCounter.rectTransform;
+            mrt.anchorMin = new Vector2(0, 1);
+            mrt.anchorMax = new Vector2(1, 1);
+            mrt.pivot = new Vector2(0.5f, 1);
+            mrt.offsetMin = new Vector2(20, -80);
+            mrt.offsetMax = new Vector2(-20, -20);
 
             var gridGo = new GameObject("BoardGrid");
             gridGo.transform.SetParent(canvas.transform, false);
@@ -289,6 +309,9 @@ namespace MatchThree.Runtime
                 SetInputEnabled(true);
                 yield break;
             }
+
+            _moveCounter.ConsumeIfAccepted(result);
+            UpdateMovesCounterLabel();
 
             foreach (var step in result.Steps)
             {
@@ -471,6 +494,16 @@ namespace MatchThree.Runtime
 
                 view.Button.interactable = !_isAnimating && cell.IsPlayable;
             }
+        }
+
+        private void UpdateMovesCounterLabel()
+        {
+            if (_movesCounter == null || _moveCounter == null)
+            {
+                return;
+            }
+
+            _movesCounter.text = $"Moves: {_moveCounter.Remaining}/{_moveCounter.MaxMoves}";
         }
 
         private void ApplyVisual(CellView view, TileEntity tile, bool isPlayable)

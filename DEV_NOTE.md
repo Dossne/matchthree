@@ -37,6 +37,13 @@
 ## Match debugging helper
 - Press `M` in play mode to log current detected match groups and coordinates.
 
+## Move limit and acceptance rule
+- Runtime now tracks a move limit with `LevelRuntimeConfig.MaxMoves` (default `20`).
+- `MatchThreeGameController` creates `MoveCounter` at level start and displays `Moves: {Remaining}/{MaxMoves}` in the HUD.
+- Move consumption rule: **consume exactly one move only for accepted swaps**.
+  - Accepted = swap is performed and not reverted.
+  - This includes either a normal match created by the swap or a booster activation from swapping specials.
+  - Rejected swaps (no match and no special activation) are reverted and do not consume a move.
 ## Move limit UI counter
 - Runtime has a move budget configured in `MatchThreeGameController` via `maxMoves`.
 - A `MoveCounter` tracks remaining turns and updates an on-screen `Moves` text label.
