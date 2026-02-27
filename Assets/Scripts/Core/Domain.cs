@@ -7,6 +7,7 @@ namespace MatchThree.Core
     public enum TileKind { Piece, Rock, Boulder, Statuette, Special }
     public enum SpecialType { None, RocketHorizontal, RocketVertical, Bomb, SuperLightning }
     public enum GoalType { CollectColor, ClearAllRocks }
+    public enum GameState { Playing, Won, Lost }
 
     public readonly struct BoardPosition : IEquatable<BoardPosition>
     {

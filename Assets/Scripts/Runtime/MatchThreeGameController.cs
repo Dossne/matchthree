@@ -17,14 +17,35 @@ namespace MatchThree.Runtime
         private const float MaxFallDurationSeconds = 0.35f;
         private const float SettleDelaySeconds = 0.04f;
 
+        // UI layout tuning (portrait)
+        private const float HudHeight = 220f;
+        private const float BottomPadding = 110f;
+        private const float BoardWidthUsage = 0.90f;
+        private const float BoardHeightUsage = 0.96f;
+
+        // Icon padding inside cell (0 = максимально крупно)
+        private const float IconInset = 0f;
+
         [SerializeField] private TextAsset levelAsset;
         [SerializeField] private string levelResourcePath = "Levels/level_000";
+        [SerializeField]
+        private string[] levelResourcePaths =
+        {
+            "Levels/level_000",
+            "Levels/level_001",
+            "Levels/level_002"
+        };
         [SerializeField] private int randomSeed = 1234;
         [SerializeField] private int maxMoves = 20;
 
         private Board _board;
         private BoardResolver _resolver;
         private TileSpriteLibrary _spriteLibrary;
+
+        private RectTransform _uiRoot;
+        private RectTransform _hud;
+        private RectTransform _boardContainer;
+
         private GridLayoutGroup _grid;
         private RectTransform _animationLayer;
 
@@ -32,14 +53,20 @@ namespace MatchThree.Runtime
         private Text _goalsText;
         private Text _movesCounter;
 
-        // IMPORTANT: Use Core MoveCounter, not a nested one.
         private MatchThree.Core.MoveCounter _moveCounter;
         private GoalTracker _goalTracker;
+        private GameStateController _gameStateController;
+
+        private GameObject _winPanel;
+        private GameObject _losePanel;
+        private int _currentLevelIndex;
 
         private readonly Dictionary<BoardPosition, CellView> _cells = new();
         private readonly HashSet<string> _loggedMissingSpriteKeys = new();
+
         private BoardPosition? _selected;
         private bool _isAnimating;
+        private bool _isInputBlocked;
 
         private sealed class CellView
         {
@@ -67,33 +94,18 @@ namespace MatchThree.Runtime
 
             EnsureUi();
 
-            var asset = levelAsset != null ? levelAsset : Resources.Load<TextAsset>(levelResourcePath);
+            _spriteLibrary = TileSpriteLibrary.LoadFromTilesFolder();
+
+            _currentLevelIndex = ResolveInitialLevelIndex();
+            var asset = LoadLevelAsset(_currentLevelIndex);
+
             if (asset == null)
             {
-                _status.text = $"Missing level asset at Resources/{levelResourcePath}";
+                _status.text = $"Missing level asset at Resources/{CurrentLevelPath()}";
                 return;
             }
 
-            _board = LevelParser.Parse(asset.text, new[] { 1, 2, 3, 4 });
-            _resolver = new BoardResolver(_board, new SeededRandom(randomSeed));
-
-            // Init move counter once. No extra Reset needed after new.
-            _moveCounter = new MatchThree.Core.MoveCounter(maxMoves);
-
-            // Fill board once.
-            _resolver.FillBoardWithoutInitialMatches();
-
-            // Goals
-            _goalTracker = new GoalTracker(BuildGoalDefinitions());
-            _goalTracker.Initialize(_board);
-
-            // Sprites
-            _spriteLibrary = TileSpriteLibrary.LoadFromTilesFolder();
-
-            BuildGrid();
-            UpdateMovesCounterLabel();
-            Render();
-            RefreshGoalsUi();
+            InitializeLevel(asset);
         }
 
         private void Update()
@@ -130,74 +142,319 @@ namespace MatchThree.Runtime
                 var cgo = new GameObject("Canvas");
                 canvas = cgo.AddComponent<Canvas>();
                 canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-                cgo.AddComponent<CanvasScaler>();
                 cgo.AddComponent<GraphicRaycaster>();
             }
 
-            // Status (top-left)
-            var statusGo = new GameObject("Status");
-            statusGo.transform.SetParent(canvas.transform, false);
-            _status = statusGo.AddComponent<Text>();
+            var scaler = EnsureComponent<CanvasScaler>(canvas.gameObject);
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1080f, 1920f);
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+            scaler.matchWidthOrHeight = 0.5f;
+
+            var rootGo = FindOrCreateUiObject(canvas.transform, "Root");
+            _uiRoot = EnsureComponent<RectTransform>(rootGo);
+            _uiRoot.anchorMin = Vector2.zero;
+            _uiRoot.anchorMax = Vector2.one;
+            _uiRoot.offsetMin = Vector2.zero;
+            _uiRoot.offsetMax = Vector2.zero;
+
+            var hudGo = FindOrCreateUiObject(_uiRoot, "HUD");
+            _hud = EnsureComponent<RectTransform>(hudGo);
+            _hud.anchorMin = new Vector2(0f, 1f);
+            _hud.anchorMax = new Vector2(1f, 1f);
+            _hud.pivot = new Vector2(0.5f, 1f);
+            _hud.sizeDelta = new Vector2(0f, HudHeight);
+            _hud.anchoredPosition = Vector2.zero;
+
+            var boardContainerGo = FindOrCreateUiObject(_uiRoot, "BoardContainer");
+            _boardContainer = EnsureComponent<RectTransform>(boardContainerGo);
+            _boardContainer.anchorMin = new Vector2(0f, 0f);
+            _boardContainer.anchorMax = new Vector2(1f, 1f);
+            _boardContainer.offsetMin = new Vector2(0f, BottomPadding);
+            _boardContainer.offsetMax = new Vector2(0f, -HudHeight);
+
+            // Status
+            var statusGo = FindOrCreateUiObject(_hud, "Status");
+            _status = EnsureComponent<Text>(statusGo);
             _status.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             _status.alignment = TextAnchor.UpperLeft;
             _status.color = Color.white;
+            _status.fontSize = 30;
 
             var srt = _status.rectTransform;
-            srt.anchorMin = new Vector2(0, 1);
-            srt.anchorMax = new Vector2(1, 1);
+            srt.anchorMin = new Vector2(0, 0);
+            srt.anchorMax = new Vector2(0.65f, 1);
             srt.pivot = new Vector2(0.5f, 1);
-            srt.offsetMin = new Vector2(20, -80);
-            srt.offsetMax = new Vector2(-20, -20);
+            srt.offsetMin = new Vector2(24, 16);
+            srt.offsetMax = new Vector2(-12, -16);
 
-            // Moves counter (top-right)
-            var movesCounterGo = new GameObject("MovesCounter");
-            movesCounterGo.transform.SetParent(canvas.transform, false);
-            _movesCounter = movesCounterGo.AddComponent<Text>();
+            // Goals
+            var goalsGo = FindOrCreateUiObject(_hud, "Goals");
+            _goalsText = EnsureComponent<Text>(goalsGo);
+            _goalsText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            _goalsText.alignment = TextAnchor.UpperLeft;
+            _goalsText.color = Color.white;
+            _goalsText.fontSize = 32;
+
+            var grt = _goalsText.rectTransform;
+            grt.anchorMin = new Vector2(0, 0);
+            grt.anchorMax = new Vector2(0.72f, 1);
+            grt.pivot = new Vector2(0.5f, 1);
+            grt.offsetMin = new Vector2(24, 16);
+            grt.offsetMax = new Vector2(-12, -74);
+
+            // Moves
+            var movesGo = FindOrCreateUiObject(_hud, "Moves");
+            _movesCounter = EnsureComponent<Text>(movesGo);
             _movesCounter.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             _movesCounter.alignment = TextAnchor.UpperRight;
             _movesCounter.color = Color.white;
+            _movesCounter.fontSize = 42;
 
             var mrt = _movesCounter.rectTransform;
-            mrt.anchorMin = new Vector2(0, 1);
-            mrt.anchorMax = new Vector2(1, 1);
+            mrt.anchorMin = new Vector2(0.6f, 0f);
+            mrt.anchorMax = new Vector2(1f, 1f);
             mrt.pivot = new Vector2(0.5f, 1);
-            mrt.offsetMin = new Vector2(20, -80);
-            mrt.offsetMax = new Vector2(-20, -20);
+            mrt.offsetMin = new Vector2(12, 16);
+            mrt.offsetMax = new Vector2(-24, -16);
 
-            // Board grid (center)
-            var gridGo = new GameObject("BoardGrid");
-            gridGo.transform.SetParent(canvas.transform, false);
-            _grid = gridGo.AddComponent<GridLayoutGroup>();
-            _grid.spacing = new Vector2(2, 2);
+            // Grid (inside board container)
+            var gridGo = FindOrCreateUiObject(_boardContainer, "BoardGrid");
+            _grid = EnsureComponent<GridLayoutGroup>(gridGo);
+            _grid.spacing = new Vector2(4, 4);
 
-            var rt = _grid.GetComponent<RectTransform>();
-            rt.anchorMin = new Vector2(0.5f, 0.5f);
-            rt.anchorMax = new Vector2(0.5f, 0.5f);
-            rt.pivot = new Vector2(0.5f, 0.5f);
+            var gridRt = _grid.GetComponent<RectTransform>();
+            gridRt.anchorMin = new Vector2(0.5f, 0.5f);
+            gridRt.anchorMax = new Vector2(0.5f, 0.5f);
+            gridRt.pivot = new Vector2(0.5f, 0.5f);
 
-            // Animation layer (full screen)
-            var animationGo = new GameObject("AnimationLayer");
-            animationGo.transform.SetParent(canvas.transform, false);
-            _animationLayer = animationGo.AddComponent<RectTransform>();
+            // Animation layer
+            var animationGo = FindOrCreateUiObject(canvas.transform, "AnimationLayer");
+            _animationLayer = EnsureComponent<RectTransform>(animationGo);
             _animationLayer.anchorMin = Vector2.zero;
             _animationLayer.anchorMax = Vector2.one;
             _animationLayer.offsetMin = Vector2.zero;
             _animationLayer.offsetMax = Vector2.zero;
 
-            // Goals (top-right below header)
-            var goalsGo = new GameObject("Goals");
-            goalsGo.transform.SetParent(canvas.transform, false);
-            _goalsText = goalsGo.AddComponent<Text>();
-            _goalsText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            _goalsText.alignment = TextAnchor.UpperRight;
-            _goalsText.color = Color.white;
+            // Overlays
+            _winPanel = BuildOverlayPanel(canvas.transform, "WinPanel", "You Win!", "Next", LoadNextLevel);
+            _losePanel = BuildOverlayPanel(canvas.transform, "LosePanel", "You Lose!", "Retry", RetryLevel);
+            ShowOverlay(null);
+        }
 
-            var grt = _goalsText.rectTransform;
-            grt.anchorMin = new Vector2(0, 1);
-            grt.anchorMax = new Vector2(1, 1);
-            grt.pivot = new Vector2(0.5f, 1);
-            grt.offsetMin = new Vector2(20, -180);
-            grt.offsetMax = new Vector2(-20, -90);
+        private void InitializeLevel(TextAsset asset)
+        {
+            _selected = null;
+            _isAnimating = false;
+            _isInputBlocked = false;
+            ShowOverlay(null);
+
+            _board = LevelParser.Parse(asset.text, new[] { 1, 2, 3, 4 });
+            _resolver = new BoardResolver(_board, new SeededRandom(randomSeed));
+
+            _moveCounter = new MatchThree.Core.MoveCounter(maxMoves);
+            _resolver.FillBoardWithoutInitialMatches();
+
+            _goalTracker = new GoalTracker(BuildGoalDefinitions());
+            _goalTracker.Initialize(_board);
+
+            _gameStateController = new GameStateController(_goalTracker, _moveCounter);
+
+            BuildGrid();
+            UpdateMovesCounterLabel();
+            RefreshGoalsUi();
+
+            _status.text = "Make a move.";
+            SetInputEnabled(true);
+            Render();
+        }
+
+        private int ResolveInitialLevelIndex()
+        {
+            if (levelAsset != null)
+            {
+                return 0;
+            }
+
+            if (levelResourcePaths == null || levelResourcePaths.Length == 0)
+            {
+                levelResourcePaths = new[] { levelResourcePath };
+            }
+
+            for (var i = 0; i < levelResourcePaths.Length; i++)
+            {
+                if (levelResourcePaths[i] == levelResourcePath)
+                {
+                    return i;
+                }
+            }
+
+            return 0;
+        }
+
+        private string CurrentLevelPath()
+        {
+            if (levelAsset != null)
+            {
+                return levelAsset.name;
+            }
+
+            if (levelResourcePaths == null || levelResourcePaths.Length == 0)
+            {
+                return levelResourcePath;
+            }
+
+            if (_currentLevelIndex < 0 || _currentLevelIndex >= levelResourcePaths.Length)
+            {
+                return levelResourcePaths[0];
+            }
+
+            return levelResourcePaths[_currentLevelIndex];
+        }
+
+        private TextAsset LoadLevelAsset(int index)
+        {
+            if (levelAsset != null)
+            {
+                return levelAsset;
+            }
+
+            if (levelResourcePaths == null || levelResourcePaths.Length == 0)
+            {
+                return Resources.Load<TextAsset>(levelResourcePath);
+            }
+
+            var clampedIndex = (index % levelResourcePaths.Length + levelResourcePaths.Length) % levelResourcePaths.Length;
+            var path = levelResourcePaths[clampedIndex];
+            return Resources.Load<TextAsset>(path);
+        }
+
+        private void RetryLevel()
+        {
+            if (_isAnimating) return;
+
+            var asset = LoadLevelAsset(_currentLevelIndex);
+            if (asset == null)
+            {
+                _status.text = $"Missing level asset at Resources/{CurrentLevelPath()}";
+                return;
+            }
+
+            InitializeLevel(asset);
+        }
+
+        private void LoadNextLevel()
+        {
+            if (_isAnimating) return;
+
+            if (levelAsset == null && levelResourcePaths != null && levelResourcePaths.Length > 0)
+            {
+                _currentLevelIndex = (_currentLevelIndex + 1) % levelResourcePaths.Length;
+            }
+
+            var asset = LoadLevelAsset(_currentLevelIndex);
+            if (asset == null)
+            {
+                _status.text = $"Missing level asset at Resources/{CurrentLevelPath()}";
+                return;
+            }
+
+            InitializeLevel(asset);
+        }
+
+        private void ShowOverlay(GameState? state)
+        {
+            if (_winPanel != null) _winPanel.SetActive(state == GameState.Won);
+            if (_losePanel != null) _losePanel.SetActive(state == GameState.Lost);
+        }
+
+        private static GameObject FindOrCreateUiObject(Transform parent, string objectName)
+        {
+            var existing = parent.Find(objectName);
+            if (existing != null)
+            {
+                return existing.gameObject;
+            }
+
+            var created = new GameObject(objectName);
+            created.transform.SetParent(parent, false);
+            return created;
+        }
+
+        private static T EnsureComponent<T>(GameObject go) where T : Component
+        {
+            return go.TryGetComponent<T>(out var existing) ? existing : go.AddComponent<T>();
+        }
+
+        private GameObject BuildOverlayPanel(
+            Transform canvas,
+            string panelName,
+            string title,
+            string buttonText,
+            UnityEngine.Events.UnityAction onClick)
+        {
+            var panelGo = FindOrCreateUiObject(canvas, panelName);
+            var panelRect = EnsureComponent<RectTransform>(panelGo);
+            panelRect.anchorMin = Vector2.zero;
+            panelRect.anchorMax = Vector2.one;
+            panelRect.offsetMin = Vector2.zero;
+            panelRect.offsetMax = Vector2.zero;
+
+            var background = EnsureComponent<Image>(panelGo);
+            background.color = new Color(0f, 0f, 0f, 0.72f);
+            background.raycastTarget = true;
+
+            var group = EnsureComponent<CanvasGroup>(panelGo);
+            group.interactable = true;
+            group.blocksRaycasts = true;
+
+            var titleGo = FindOrCreateUiObject(panelGo.transform, "Title");
+            var titleText = EnsureComponent<Text>(titleGo);
+            titleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            titleText.text = title;
+            titleText.alignment = TextAnchor.MiddleCenter;
+            titleText.color = Color.white;
+            titleText.fontSize = 52;
+
+            var titleRect = titleText.rectTransform;
+            titleRect.anchorMin = new Vector2(0.5f, 0.5f);
+            titleRect.anchorMax = new Vector2(0.5f, 0.5f);
+            titleRect.pivot = new Vector2(0.5f, 0.5f);
+            titleRect.sizeDelta = new Vector2(520f, 120f);
+            titleRect.anchoredPosition = new Vector2(0f, 90f);
+
+            var buttonGo = FindOrCreateUiObject(panelGo.transform, "ActionButton");
+            var buttonImage = EnsureComponent<Image>(buttonGo);
+            buttonImage.color = new Color(1f, 1f, 1f, 0.92f);
+
+            var button = EnsureComponent<Button>(buttonGo);
+            button.targetGraphic = buttonImage;
+            button.onClick.RemoveAllListeners();
+            button.onClick.AddListener(onClick);
+
+            var buttonRect = button.GetComponent<RectTransform>();
+            buttonRect.anchorMin = new Vector2(0.5f, 0.5f);
+            buttonRect.anchorMax = new Vector2(0.5f, 0.5f);
+            buttonRect.pivot = new Vector2(0.5f, 0.5f);
+            buttonRect.sizeDelta = new Vector2(320f, 90f);
+            buttonRect.anchoredPosition = new Vector2(0f, -20f);
+
+            var buttonLabelGo = FindOrCreateUiObject(buttonGo.transform, "Label");
+            var buttonLabel = EnsureComponent<Text>(buttonLabelGo);
+            buttonLabel.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            buttonLabel.text = buttonText;
+            buttonLabel.alignment = TextAnchor.MiddleCenter;
+            buttonLabel.color = Color.black;
+            buttonLabel.fontSize = 42;
+
+            var buttonLabelRect = buttonLabel.rectTransform;
+            buttonLabelRect.anchorMin = Vector2.zero;
+            buttonLabelRect.anchorMax = Vector2.one;
+            buttonLabelRect.offsetMin = Vector2.zero;
+            buttonLabelRect.offsetMax = Vector2.zero;
+
+            panelGo.SetActive(false);
+            return panelGo;
         }
 
         private void BuildGrid()
@@ -207,15 +464,13 @@ namespace MatchThree.Runtime
 
             _grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
             _grid.constraintCount = _board.Width;
-            _grid.cellSize = new Vector2(70, 70);
-
-            var rt = _grid.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(_board.Width * 72, _board.Height * 72);
+            ConfigureBoardLayout();
 
             for (var y = 0; y < _board.Height; y++)
                 for (var x = 0; x < _board.Width; x++)
                 {
                     var pos = new BoardPosition(x, y);
+
                     var go = new GameObject($"Cell_{x}_{y}");
                     var root = go.AddComponent<RectTransform>();
                     go.transform.SetParent(_grid.transform, false);
@@ -228,11 +483,13 @@ namespace MatchThree.Runtime
                     var iconGo = new GameObject("Icon");
                     iconGo.transform.SetParent(go.transform, false);
                     var icon = iconGo.AddComponent<Image>();
+                    icon.useSpriteMesh = true;
+
                     var irt = icon.rectTransform;
                     irt.anchorMin = Vector2.zero;
                     irt.anchorMax = Vector2.one;
-                    irt.offsetMin = new Vector2(6, 6);
-                    irt.offsetMax = new Vector2(-6, -6);
+                    irt.offsetMin = new Vector2(IconInset, IconInset);
+                    irt.offsetMax = new Vector2(-IconInset, -IconInset);
 
                     var labelGo = new GameObject("Label");
                     labelGo.transform.SetParent(go.transform, false);
@@ -240,6 +497,7 @@ namespace MatchThree.Runtime
                     txt.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
                     txt.alignment = TextAnchor.MiddleCenter;
                     txt.color = Color.black;
+
                     var lrt = txt.rectTransform;
                     lrt.anchorMin = Vector2.zero;
                     lrt.anchorMax = Vector2.one;
@@ -262,7 +520,7 @@ namespace MatchThree.Runtime
 
         private void OnCellClicked(BoardPosition pos)
         {
-            if (_isAnimating) return;
+            if (_isAnimating || _isInputBlocked) return;
 
             if (_moveCounter != null && !_moveCounter.CanMakeMove)
             {
@@ -315,22 +573,20 @@ namespace MatchThree.Runtime
                 yield break;
             }
 
-            // Consume exactly once for accepted moves.
-            _moveCounter.ConsumeIfAccepted(result);
-            UpdateMovesCounterLabel();
-
             foreach (var step in result.Steps)
             {
                 yield return AnimateResolveStep(step);
             }
 
+            _moveCounter.ConsumeIfAccepted(result);
             _goalTracker.ApplyMoveResult(result);
+            UpdateMovesCounterLabel();
             RefreshGoalsUi();
+            UpdateStatusAfterEvaluation();
 
-            _status.text = $"Resolved steps: {result.Steps.Count}. Delivered: {_resolver.AreAllStatuettesDelivered()}";
             _isAnimating = false;
             Render();
-            SetInputEnabled(true);
+            SetInputEnabled(_gameStateController.State == GameState.Playing);
         }
 
         private IEnumerator AnimateSwap(BoardPosition from, BoardPosition to, TileEntitySnapshot? fromTile, TileEntitySnapshot? toTile, bool animateBack)
@@ -473,7 +729,7 @@ namespace MatchThree.Runtime
 
         private void SetInputEnabled(bool enabled)
         {
-            _isAnimating = !enabled;
+            _isInputBlocked = !enabled;
             Render();
         }
 
@@ -493,7 +749,28 @@ namespace MatchThree.Runtime
                     view.Background.color = new Color(1f, 1f, 1f, 0.35f);
                 }
 
-                view.Button.interactable = !_isAnimating && cell.IsPlayable;
+                view.Button.interactable = !_isAnimating && !_isInputBlocked && cell.IsPlayable;
+            }
+        }
+
+        private void UpdateStatusAfterEvaluation()
+        {
+            var state = _gameStateController.EvaluateAfterMove();
+            ShowOverlay(state);
+
+            switch (state)
+            {
+                case GameState.Won:
+                    _status.text = "You win!";
+                    SetInputEnabled(false);
+                    break;
+                case GameState.Lost:
+                    _status.text = "You lose! Out of moves.";
+                    SetInputEnabled(false);
+                    break;
+                default:
+                    _status.text = "Make a move.";
+                    break;
             }
         }
 
@@ -658,10 +935,36 @@ namespace MatchThree.Runtime
             return localPoint;
         }
 
+        private void ConfigureBoardLayout()
+        {
+            Canvas.ForceUpdateCanvases();
+
+            var cols = Mathf.Max(1, _board.Width);
+            var rows = Mathf.Max(1, _board.Height);
+            var spacingX = _grid.spacing.x;
+            var spacingY = _grid.spacing.y;
+
+            var availableWidth = Mathf.Max(1f, _boardContainer.rect.width * BoardWidthUsage);
+            var availableHeight = Mathf.Max(1f, _boardContainer.rect.height * BoardHeightUsage);
+
+            var cellFromWidth = Mathf.Floor((availableWidth - spacingX * (cols - 1)) / cols);
+            var cellFromHeight = Mathf.Floor((availableHeight - spacingY * (rows - 1)) / rows);
+            var cellSize = Mathf.Max(1f, Mathf.Min(cellFromWidth, cellFromHeight));
+
+            _grid.cellSize = new Vector2(cellSize, cellSize);
+
+            var gridWidth = cellSize * cols + spacingX * (cols - 1);
+            var gridHeight = cellSize * rows + spacingY * (rows - 1);
+
+            var rt = _grid.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(gridWidth, gridHeight);
+        }
+
         private TransientTile CreateTransientTile(TileEntitySnapshot tile, BoardPosition at)
         {
             var go = new GameObject("TransientTile");
             go.transform.SetParent(_animationLayer, false);
+
             var root = go.AddComponent<RectTransform>();
             root.sizeDelta = _grid.cellSize;
             root.anchoredPosition = CellPosition(at);
@@ -670,11 +973,13 @@ namespace MatchThree.Runtime
 
             var iconGo = new GameObject("Icon");
             iconGo.transform.SetParent(go.transform, false);
+
             var icon = iconGo.AddComponent<Image>();
+            icon.useSpriteMesh = true;
             icon.rectTransform.anchorMin = Vector2.zero;
             icon.rectTransform.anchorMax = Vector2.one;
-            icon.rectTransform.offsetMin = new Vector2(6, 6);
-            icon.rectTransform.offsetMax = new Vector2(-6, -6);
+            icon.rectTransform.offsetMin = new Vector2(IconInset, IconInset);
+            icon.rectTransform.offsetMax = new Vector2(-IconInset, -IconInset);
 
             var visual = ResolveVisual(tile);
             if (visual.Sprite != null)
@@ -740,7 +1045,6 @@ namespace MatchThree.Runtime
 
         private IEnumerable<GoalDefinition> BuildGoalDefinitions()
         {
-            // Temporary hardcoded setup until level config data exists.
             yield return new CollectColorGoalDefinition(1, 10);
             yield return new ClearAllRocksGoalDefinition();
         }

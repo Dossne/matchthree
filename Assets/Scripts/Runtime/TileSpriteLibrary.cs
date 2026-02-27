@@ -17,6 +17,12 @@ namespace MatchThree.Runtime
     {
         private const string TilesFolderPath = "Assets/Tiles";
 
+#if UNITY_EDITOR
+        private const int TilePixelsPerUnit = 100;
+        private const int MinimumMaxTextureSize = 512;
+        private const FilterMode TileFilterMode = FilterMode.Bilinear;
+#endif
+
         private readonly Dictionary<int, Sprite> _normalByColor = new();
         private readonly Dictionary<ObstacleSpriteType, Sprite> _obstacles = new();
         private readonly Dictionary<BoosterSpriteType, Sprite> _boosters = new();
@@ -140,11 +146,22 @@ namespace MatchThree.Runtime
         }
 
 #if UNITY_EDITOR
+        [MenuItem("Tools/MatchThree/Fix Tile Import Settings")]
+        private static void FixTileImportSettingsFromMenu()
+        {
+            EnsureTilesAreImportedAsSprites(logPrefix: "Tile import fix");
+        }
+
         private static void EnsureTilesAreImportedAsSprites()
+        {
+            EnsureTilesAreImportedAsSprites("Tiles import check");
+        }
+
+        private static void EnsureTilesAreImportedAsSprites(string logPrefix)
         {
             var textureGuids = AssetDatabase.FindAssets("t:Texture", new[] { TilesFolderPath });
             var foundNames = new List<string>();
-            var changed = 0;
+            var changedPaths = new List<string>();
 
             foreach (var guid in textureGuids)
             {
@@ -156,19 +173,79 @@ namespace MatchThree.Runtime
                 }
 
                 foundNames.Add(Path.GetFileNameWithoutExtension(path));
-                if (importer.textureType == TextureImporterType.Sprite)
+                var changed = false;
+                if (importer.textureType != TextureImporterType.Sprite)
+                {
+                    importer.textureType = TextureImporterType.Sprite;
+                    changed = true;
+                }
+
+                if (importer.spriteImportMode != SpriteImportMode.Single)
+                {
+                    importer.spriteImportMode = SpriteImportMode.Single;
+                    changed = true;
+                }
+
+                if (importer.spritePixelsPerUnit != TilePixelsPerUnit)
+                {
+                    importer.spritePixelsPerUnit = TilePixelsPerUnit;
+                    changed = true;
+                }
+
+                if (importer.maxTextureSize < MinimumMaxTextureSize)
+                {
+                    importer.maxTextureSize = MinimumMaxTextureSize;
+                    changed = true;
+                }
+
+                if (importer.textureCompression != TextureImporterCompression.Uncompressed)
+                {
+                    importer.textureCompression = TextureImporterCompression.Uncompressed;
+                    changed = true;
+                }
+
+                if (importer.filterMode != TileFilterMode)
+                {
+                    importer.filterMode = TileFilterMode;
+                    changed = true;
+                }
+
+                if (importer.mipmapEnabled)
+                {
+                    importer.mipmapEnabled = false;
+                    changed = true;
+                }
+
+                if (!importer.alphaIsTransparency)
+                {
+                    importer.alphaIsTransparency = true;
+                    changed = true;
+                }
+
+                if (!changed)
                 {
                     continue;
                 }
 
-                importer.textureType = TextureImporterType.Sprite;
-                importer.spriteImportMode = SpriteImportMode.Single;
                 importer.SaveAndReimport();
-                changed++;
+                changedPaths.Add(path);
             }
 
             foundNames.Sort(StringComparer.OrdinalIgnoreCase);
-            Debug.Log($"Tiles import check: found {foundNames.Count} sprites in {TilesFolderPath}: [{string.Join(", ", foundNames)}]{(changed > 0 ? $". Reimported {changed} textures." : string.Empty)}");
+            changedPaths.Sort(StringComparer.OrdinalIgnoreCase);
+
+            var expectedKeys = Mapping.Keys.OrderBy(key => key).ToArray();
+            var keySet = new HashSet<string>(foundNames, StringComparer.OrdinalIgnoreCase);
+            var missing = expectedKeys.Where(expected => !keySet.Contains(expected)).ToArray();
+
+            var changedText = changedPaths.Count > 0
+                ? $" changed [{string.Join(", ", changedPaths)}]"
+                : " changed [none]";
+            var missingText = missing.Length > 0
+                ? $" missing expected keys [{string.Join(", ", missing)}]"
+                : " missing expected keys [none]";
+
+            Debug.Log($"{logPrefix}: found {foundNames.Count} textures in {TilesFolderPath}.{changedText}.{missingText}");
         }
 #endif
     }

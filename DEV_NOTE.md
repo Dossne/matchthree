@@ -67,3 +67,44 @@
 - Clear-rock goal completion rule is: **zero Rock and zero Boulder entities remain on the board**.
 - Initialization count treats each `Rock` and `Boulder` tile as 1 remaining obstacle.
 - Boulder damage (`Boulder -> Rock`) does not decrement the goal yet because an obstacle still remains.
+
+## A4 win/lose overlays and level flow
+- Runtime now owns a simple ordered level path list in `MatchThreeGameController.levelResourcePaths`.
+  - Default order: `Levels/level_000`, `Levels/level_001`, `Levels/level_002`.
+- `currentLevelIndex` is tracked at runtime.
+  - **Retry** reloads the current index and reinitializes board, moves, and goals.
+  - **Next** increments index and wraps to the first level when it passes the end.
+- Two Canvas overlays were added in runtime-created UI:
+  - `WinPanel` with `You Win!` + `Next` button.
+  - `LosePanel` with `You Lose!` + `Retry` button.
+- Overlays are shown only when game state enters `Won`/`Lost`; they are hidden after level initialization.
+
+## Portrait board sizing + HUD layout
+- Runtime UI now forces `CanvasScaler` to:
+  - `Scale With Screen Size`
+  - reference resolution `1080x1920`
+  - screen match mode `Match Width Or Height` with match `0.5`
+- A top-level `Root` rect is split into:
+  - `HUD` (top band, default `220` units high)
+  - `BoardContainer` (center play area between HUD and bottom padding)
+- `BuildGrid()` no longer uses hardcoded tile size. Cell size is computed dynamically from available board space:
+  - `cellFromWidth = floor((availableWidth - spacing*(cols-1)) / cols)`
+  - `cellFromHeight = floor((availableHeight - spacing*(rows-1)) / rows)`
+  - `cellSize = min(cellFromWidth, cellFromHeight)`
+- Tuning knobs in `MatchThreeGameController`:
+  - `BoardWidthUsage` (default `0.90`) controls how much board-container width the grid targets.
+  - `HudHeight` (default `220`) controls readable top HUD space.
+  - `BottomPadding` (default `110`) reserves lower safe area.
+- Icon insets for both board cells and transient animation tiles are set to `0` and `Image.useSpriteMesh = true` so artwork fills each tile cell.
+
+## Tile sprite import fixer
+- Use **Tools → MatchThree → Fix Tile Import Settings** to normalize all textures in `Assets/Tiles` in one click.
+- Current enforced defaults:
+  - `Texture Type = Sprite (2D and UI)`
+  - `Sprite Mode = Single`
+  - `Pixels Per Unit = 100`
+  - `Max Size >= 512`
+  - `Compression = None`
+  - `Filter Mode = Bilinear` (chosen for smooth/cartoon art)
+  - `Mip Maps = Disabled`
+- For larger/smaller on-board icons, tweak `IconInset` in `MatchThreeGameController` (0 to 2 is the intended range).
