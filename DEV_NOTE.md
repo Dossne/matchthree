@@ -36,3 +36,22 @@
 
 ## Match debugging helper
 - Press `M` in play mode to log current detected match groups and coordinates.
+
+## Goal system (A1)
+- Core now supports two goal types:
+  - `CollectColorGoalDefinition(colorId, targetCount)`
+  - `ClearAllRocksGoalDefinition()`
+- Runtime currently configures goals in `MatchThreeGameController.BuildGoalDefinitions()` (hardcoded until level goal config exists).
+- Goal progress is tracked by `GoalTracker`, initialized from board state and updated after each resolved player move.
+
+### Goal update events
+- Resolver emits `ResolveStepSummary` per resolve step with:
+  - `ClearedPiecesByColor`
+  - `DestroyedObstaclesByType`
+- `CollectColor` increments from `ClearedPiecesByColor` for matches and special-effect clears alike (all piece removals are counted).
+- `ClearAllRocks` decrements from destroyed rock/boulder events.
+
+### Rock/Boulder counting rule
+- Clear-rock goal completion rule is: **zero Rock and zero Boulder entities remain on the board**.
+- Initialization count treats each `Rock` and `Boulder` tile as 1 remaining obstacle.
+- Boulder damage (`Boulder -> Rock`) does not decrement the goal yet because an obstacle still remains.
