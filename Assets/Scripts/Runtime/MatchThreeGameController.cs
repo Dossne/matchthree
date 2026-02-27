@@ -27,16 +27,19 @@ namespace MatchThree.Runtime
         private TileSpriteLibrary _spriteLibrary;
         private GridLayoutGroup _grid;
         private RectTransform _animationLayer;
+
         private Text _status;
         private Text _goalsText;
-        private LevelRuntimeConfig _runtimeConfig;
-        private MoveCounter _moveCounter;
         private Text _movesCounter;
+
+        // IMPORTANT: Use Core MoveCounter, not a nested one.
+        private MatchThree.Core.MoveCounter _moveCounter;
+        private GoalTracker _goalTracker;
+
         private readonly Dictionary<BoardPosition, CellView> _cells = new();
         private readonly HashSet<string> _loggedMissingSpriteKeys = new();
         private BoardPosition? _selected;
         private bool _isAnimating;
-        private GoalTracker _goalTracker;
 
         private sealed class CellView
         {
@@ -61,7 +64,9 @@ namespace MatchThree.Runtime
         private void Start()
         {
             Screen.orientation = ScreenOrientation.Portrait;
+
             EnsureUi();
+
             var asset = levelAsset != null ? levelAsset : Resources.Load<TextAsset>(levelResourcePath);
             if (asset == null)
             {
@@ -71,20 +76,23 @@ namespace MatchThree.Runtime
 
             _board = LevelParser.Parse(asset.text, new[] { 1, 2, 3, 4 });
             _resolver = new BoardResolver(_board, new SeededRandom(randomSeed));
-            _runtimeConfig = new LevelRuntimeConfig();
-            _moveCounter = new MoveCounter(_runtimeConfig.MaxMoves);
-            _moveCounter.Reset();
+
+            // Init move counter once. No extra Reset needed after new.
+            _moveCounter = new MatchThree.Core.MoveCounter(maxMoves);
+
+            // Fill board once.
             _resolver.FillBoardWithoutInitialMatches();
-            _runtimeConfig = new LevelRuntimeConfig(maxMoves);
-            _moveCounter = new MoveCounter(_runtimeConfig.MaxMoves);
+
+            // Goals
             _goalTracker = new GoalTracker(BuildGoalDefinitions());
             _goalTracker.Initialize(_board);
+
+            // Sprites
             _spriteLibrary = TileSpriteLibrary.LoadFromTilesFolder();
 
             BuildGrid();
             UpdateMovesCounterLabel();
             Render();
-            RefreshMovesUi();
             RefreshGoalsUi();
         }
 
@@ -126,12 +134,14 @@ namespace MatchThree.Runtime
                 cgo.AddComponent<GraphicRaycaster>();
             }
 
+            // Status (top-left)
             var statusGo = new GameObject("Status");
             statusGo.transform.SetParent(canvas.transform, false);
             _status = statusGo.AddComponent<Text>();
             _status.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             _status.alignment = TextAnchor.UpperLeft;
             _status.color = Color.white;
+
             var srt = _status.rectTransform;
             srt.anchorMin = new Vector2(0, 1);
             srt.anchorMax = new Vector2(1, 1);
@@ -139,12 +149,14 @@ namespace MatchThree.Runtime
             srt.offsetMin = new Vector2(20, -80);
             srt.offsetMax = new Vector2(-20, -20);
 
-            var movesGo = new GameObject("MovesCounter");
-            movesGo.transform.SetParent(canvas.transform, false);
-            _movesCounter = movesGo.AddComponent<Text>();
+            // Moves counter (top-right)
+            var movesCounterGo = new GameObject("MovesCounter");
+            movesCounterGo.transform.SetParent(canvas.transform, false);
+            _movesCounter = movesCounterGo.AddComponent<Text>();
             _movesCounter.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             _movesCounter.alignment = TextAnchor.UpperRight;
             _movesCounter.color = Color.white;
+
             var mrt = _movesCounter.rectTransform;
             mrt.anchorMin = new Vector2(0, 1);
             mrt.anchorMax = new Vector2(1, 1);
@@ -152,15 +164,18 @@ namespace MatchThree.Runtime
             mrt.offsetMin = new Vector2(20, -80);
             mrt.offsetMax = new Vector2(-20, -20);
 
+            // Board grid (center)
             var gridGo = new GameObject("BoardGrid");
             gridGo.transform.SetParent(canvas.transform, false);
             _grid = gridGo.AddComponent<GridLayoutGroup>();
             _grid.spacing = new Vector2(2, 2);
+
             var rt = _grid.GetComponent<RectTransform>();
             rt.anchorMin = new Vector2(0.5f, 0.5f);
             rt.anchorMax = new Vector2(0.5f, 0.5f);
             rt.pivot = new Vector2(0.5f, 0.5f);
 
+            // Animation layer (full screen)
             var animationGo = new GameObject("AnimationLayer");
             animationGo.transform.SetParent(canvas.transform, false);
             _animationLayer = animationGo.AddComponent<RectTransform>();
@@ -169,37 +184,27 @@ namespace MatchThree.Runtime
             _animationLayer.offsetMin = Vector2.zero;
             _animationLayer.offsetMax = Vector2.zero;
 
+            // Goals (top-right below header)
             var goalsGo = new GameObject("Goals");
             goalsGo.transform.SetParent(canvas.transform, false);
             _goalsText = goalsGo.AddComponent<Text>();
             _goalsText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             _goalsText.alignment = TextAnchor.UpperRight;
             _goalsText.color = Color.white;
+
             var grt = _goalsText.rectTransform;
             grt.anchorMin = new Vector2(0, 1);
             grt.anchorMax = new Vector2(1, 1);
             grt.pivot = new Vector2(0.5f, 1);
             grt.offsetMin = new Vector2(20, -180);
             grt.offsetMax = new Vector2(-20, -90);
-
-            var movesGo = new GameObject("Moves");
-            movesGo.transform.SetParent(canvas.transform, false);
-            _movesCounter = movesGo.AddComponent<Text>();
-            _movesCounter.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            _movesCounter.alignment = TextAnchor.UpperCenter;
-            _movesCounter.color = Color.white;
-            var mrt = _movesCounter.rectTransform;
-            mrt.anchorMin = new Vector2(0, 1);
-            mrt.anchorMax = new Vector2(1, 1);
-            mrt.pivot = new Vector2(0.5f, 1);
-            mrt.offsetMin = new Vector2(20, -220);
-            mrt.offsetMax = new Vector2(-20, -180);
         }
 
         private void BuildGrid()
         {
             foreach (Transform child in _grid.transform) Destroy(child.gameObject);
             _cells.Clear();
+
             _grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
             _grid.constraintCount = _board.Width;
             _grid.cellSize = new Vector2(70, 70);
@@ -208,56 +213,58 @@ namespace MatchThree.Runtime
             rt.sizeDelta = new Vector2(_board.Width * 72, _board.Height * 72);
 
             for (var y = 0; y < _board.Height; y++)
-            for (var x = 0; x < _board.Width; x++)
-            {
-                var pos = new BoardPosition(x, y);
-                var go = new GameObject($"Cell_{x}_{y}");
-                var root = go.AddComponent<RectTransform>();
-                go.transform.SetParent(_grid.transform, false);
-
-                var background = go.AddComponent<Image>();
-                var button = go.AddComponent<Button>();
-                button.targetGraphic = background;
-                button.onClick.AddListener(() => OnCellClicked(pos));
-
-                var iconGo = new GameObject("Icon");
-                iconGo.transform.SetParent(go.transform, false);
-                var icon = iconGo.AddComponent<Image>();
-                var irt = icon.rectTransform;
-                irt.anchorMin = Vector2.zero;
-                irt.anchorMax = Vector2.one;
-                irt.offsetMin = new Vector2(6, 6);
-                irt.offsetMax = new Vector2(-6, -6);
-
-                var labelGo = new GameObject("Label");
-                labelGo.transform.SetParent(go.transform, false);
-                var txt = labelGo.AddComponent<Text>();
-                txt.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-                txt.alignment = TextAnchor.MiddleCenter;
-                txt.color = Color.black;
-                var lrt = txt.rectTransform;
-                lrt.anchorMin = Vector2.zero;
-                lrt.anchorMax = Vector2.one;
-                lrt.offsetMin = Vector2.zero;
-                lrt.offsetMax = Vector2.zero;
-
-                var group = go.AddComponent<CanvasGroup>();
-                _cells[pos] = new CellView
+                for (var x = 0; x < _board.Width; x++)
                 {
-                    Root = root,
-                    Button = button,
-                    Background = background,
-                    Icon = icon,
-                    Label = txt,
-                    Group = group
-                };
-            }
+                    var pos = new BoardPosition(x, y);
+                    var go = new GameObject($"Cell_{x}_{y}");
+                    var root = go.AddComponent<RectTransform>();
+                    go.transform.SetParent(_grid.transform, false);
+
+                    var background = go.AddComponent<Image>();
+                    var button = go.AddComponent<Button>();
+                    button.targetGraphic = background;
+                    button.onClick.AddListener(() => OnCellClicked(pos));
+
+                    var iconGo = new GameObject("Icon");
+                    iconGo.transform.SetParent(go.transform, false);
+                    var icon = iconGo.AddComponent<Image>();
+                    var irt = icon.rectTransform;
+                    irt.anchorMin = Vector2.zero;
+                    irt.anchorMax = Vector2.one;
+                    irt.offsetMin = new Vector2(6, 6);
+                    irt.offsetMax = new Vector2(-6, -6);
+
+                    var labelGo = new GameObject("Label");
+                    labelGo.transform.SetParent(go.transform, false);
+                    var txt = labelGo.AddComponent<Text>();
+                    txt.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                    txt.alignment = TextAnchor.MiddleCenter;
+                    txt.color = Color.black;
+                    var lrt = txt.rectTransform;
+                    lrt.anchorMin = Vector2.zero;
+                    lrt.anchorMax = Vector2.one;
+                    lrt.offsetMin = Vector2.zero;
+                    lrt.offsetMax = Vector2.zero;
+
+                    var group = go.AddComponent<CanvasGroup>();
+
+                    _cells[pos] = new CellView
+                    {
+                        Root = root,
+                        Button = button,
+                        Background = background,
+                        Icon = icon,
+                        Label = txt,
+                        Group = group
+                    };
+                }
         }
 
         private void OnCellClicked(BoardPosition pos)
         {
             if (_isAnimating) return;
-            if (_moveCounter != null && !_moveCounter.HasMovesRemaining)
+
+            if (_moveCounter != null && !_moveCounter.CanMakeMove)
             {
                 _status.text = "No moves remaining.";
                 return;
@@ -284,6 +291,7 @@ namespace MatchThree.Runtime
         {
             _isAnimating = true;
             SetInputEnabled(false);
+
             var result = _resolver.TrySwapAndResolve(new Move(from, to));
             _selected = null;
 
@@ -307,6 +315,7 @@ namespace MatchThree.Runtime
                 yield break;
             }
 
+            // Consume exactly once for accepted moves.
             _moveCounter.ConsumeIfAccepted(result);
             UpdateMovesCounterLabel();
 
@@ -316,8 +325,6 @@ namespace MatchThree.Runtime
             }
 
             _goalTracker.ApplyMoveResult(result);
-            _moveCounter.TryConsumeMove();
-            RefreshMovesUi();
             RefreshGoalsUi();
 
             _status.text = $"Resolved steps: {result.Steps.Count}. Delivered: {_resolver.AreAllStatuettesDelivered()}";
@@ -332,6 +339,7 @@ namespace MatchThree.Runtime
 
             var hidden = new[] { from, to };
             SetCellsVisible(hidden, false);
+
             var fromView = CreateTransientTile(fromTile.Value, from);
             var toView = CreateTransientTile(toTile.Value, to);
 
@@ -365,6 +373,7 @@ namespace MatchThree.Runtime
                 var removedViews = new List<TransientTile>(step.RemovedTiles.Count);
                 var hidden = step.RemovedTiles.Select(r => r.Position).ToList();
                 SetCellsVisible(hidden, false);
+
                 foreach (var removed in step.RemovedTiles)
                 {
                     removedViews.Add(CreateTransientTile(removed.Tile, removed.Position));
@@ -393,10 +402,12 @@ namespace MatchThree.Runtime
             {
                 var moving = new List<(RectTransform Rect, Vector2 From, Vector2 To, float Duration)>();
                 var hidden = new HashSet<BoardPosition>();
+
                 foreach (var movement in step.Movements)
                 {
                     hidden.Add(movement.From);
                     hidden.Add(movement.To);
+
                     var tile = CreateTransientTile(movement.Tile, movement.From);
                     var dist = Mathf.Abs(movement.To.Y - movement.From.Y) + Mathf.Abs(movement.To.X - movement.From.X);
                     var duration = Mathf.Clamp(dist * FallPerCellSeconds, MinFallDurationSeconds, MaxFallDurationSeconds);
@@ -405,6 +416,7 @@ namespace MatchThree.Runtime
 
                 SetCellsVisible(hidden, false);
                 yield return AnimateManyMoves(moving);
+
                 foreach (var m in moving) Destroy(m.Rect.gameObject);
                 SetCellsVisible(hidden, true);
             }
@@ -413,19 +425,23 @@ namespace MatchThree.Runtime
             {
                 var spawning = new List<(RectTransform Rect, Vector2 From, Vector2 To, float Duration)>();
                 var hidden = new HashSet<BoardPosition>();
+
                 foreach (var spawn in step.Spawns)
                 {
                     hidden.Add(spawn.To);
+
                     var tile = CreateTransientTile(spawn.Tile, spawn.To);
                     var to = CellPosition(spawn.To);
                     var from = to + new Vector2(0f, (_grid.cellSize.y + _grid.spacing.y) * spawn.SpawnDistance);
                     var duration = Mathf.Clamp(spawn.SpawnDistance * FallPerCellSeconds, MinFallDurationSeconds, MaxFallDurationSeconds);
+
                     tile.Root.anchoredPosition = from;
                     spawning.Add((tile.Root, from, to, duration));
                 }
 
                 SetCellsVisible(hidden, false);
                 yield return AnimateManyMoves(spawning);
+
                 foreach (var s in spawning) Destroy(s.Rect.gameObject);
                 SetCellsVisible(hidden, true);
             }
@@ -437,6 +453,7 @@ namespace MatchThree.Runtime
         {
             var maxDuration = moves.Max(m => m.Duration);
             var elapsed = 0f;
+
             while (elapsed < maxDuration)
             {
                 elapsed += Time.deltaTime;
@@ -454,20 +471,6 @@ namespace MatchThree.Runtime
             }
         }
 
-        private IEnumerator AnimateMove(RectTransform rect, Vector2 from, Vector2 to, float duration)
-        {
-            var elapsed = 0f;
-            while (elapsed < duration)
-            {
-                elapsed += Time.deltaTime;
-                var t = Mathf.Clamp01(elapsed / duration);
-                rect.anchoredPosition = Vector2.LerpUnclamped(from, to, t);
-                yield return null;
-            }
-
-            rect.anchoredPosition = to;
-        }
-
         private void SetInputEnabled(bool enabled)
         {
             _isAnimating = !enabled;
@@ -481,6 +484,7 @@ namespace MatchThree.Runtime
                 var p = kvp.Key;
                 var view = kvp.Value;
                 var cell = _board.Cells[p.X, p.Y];
+
                 ApplyVisual(view, cell.Tile, cell.IsPlayable);
 
                 if (_selected.HasValue && _selected.Value == p)
@@ -495,11 +499,7 @@ namespace MatchThree.Runtime
 
         private void UpdateMovesCounterLabel()
         {
-            if (_movesCounter == null || _moveCounter == null)
-            {
-                return;
-            }
-
+            if (_movesCounter == null || _moveCounter == null) return;
             _movesCounter.text = $"Moves: {_moveCounter.Remaining}/{_moveCounter.MaxMoves}";
         }
 
@@ -542,20 +542,24 @@ namespace MatchThree.Runtime
                     placeholder = ColorFor(tile.ColorId);
                     label = tile.ColorId.ToString();
                     break;
+
                 case TileKind.Rock:
                     sprite = _spriteLibrary?.GetObstacleSprite(ObstacleSpriteType.Rock);
                     placeholder = Color.gray;
                     label = "R";
                     break;
+
                 case TileKind.Boulder:
                     sprite = _spriteLibrary?.GetObstacleSprite(ObstacleSpriteType.Boulder);
                     placeholder = new Color(0.35f, 0.25f, 0.2f);
                     label = "B";
                     break;
+
                 case TileKind.Statuette:
                     placeholder = Color.yellow;
                     label = "S";
                     break;
+
                 case TileKind.Special:
                     sprite = tile.SpecialType switch
                     {
@@ -614,11 +618,7 @@ namespace MatchThree.Runtime
 
         private void LogMissingSpriteOnce(string key)
         {
-            if (!_loggedMissingSpriteKeys.Add(key))
-            {
-                return;
-            }
-
+            if (!_loggedMissingSpriteKeys.Add(key)) return;
             Debug.LogWarning($"Missing sprite for key='{key}' (expected in Assets/Tiles). Using placeholder.");
         }
 
@@ -667,6 +667,7 @@ namespace MatchThree.Runtime
             root.anchoredPosition = CellPosition(at);
 
             var bg = go.AddComponent<Image>();
+
             var iconGo = new GameObject("Icon");
             iconGo.transform.SetParent(go.transform, false);
             var icon = iconGo.AddComponent<Image>();
@@ -763,46 +764,6 @@ namespace MatchThree.Runtime
             }
 
             _goalsText.text = string.Join("\n", lines);
-        }
-
-        private void RefreshMovesUi()
-        {
-            if (_movesCounter == null || _moveCounter == null) return;
-            _movesCounter.text = $"Moves: {_moveCounter.MovesRemaining}/{_moveCounter.MaxMoves}";
-        }
-
-        private sealed class LevelRuntimeConfig
-        {
-            public int MaxMoves { get; }
-
-            public LevelRuntimeConfig(int maxMoves)
-            {
-                MaxMoves = Mathf.Max(1, maxMoves);
-            }
-        }
-
-        private sealed class MoveCounter
-        {
-            public int MaxMoves { get; }
-            public int MovesRemaining { get; private set; }
-            public bool HasMovesRemaining => MovesRemaining > 0;
-
-            public MoveCounter(int maxMoves)
-            {
-                MaxMoves = Mathf.Max(1, maxMoves);
-                MovesRemaining = MaxMoves;
-            }
-
-            public bool TryConsumeMove()
-            {
-                if (!HasMovesRemaining)
-                {
-                    return false;
-                }
-
-                MovesRemaining--;
-                return true;
-            }
         }
     }
 }
