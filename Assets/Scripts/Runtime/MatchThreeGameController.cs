@@ -18,9 +18,9 @@ namespace MatchThree.Runtime
         private const float SettleDelaySeconds = 0.04f;
         private const float HudHeight = 220f;
         private const float BottomPadding = 110f;
-        private const float BoardWidthUsage = 0.78f;
+        private const float BoardWidthUsage = 0.90f;
         private const float BoardHeightUsage = 0.96f;
-        private const float IconInset = 2f;
+        private const float IconInset = 0f;
 
         [SerializeField] private TextAsset levelAsset;
         [SerializeField] private string levelResourcePath = "Levels/level_000";
@@ -459,6 +459,7 @@ namespace MatchThree.Runtime
                 var iconGo = new GameObject("Icon");
                 iconGo.transform.SetParent(go.transform, false);
                 var icon = iconGo.AddComponent<Image>();
+                icon.useSpriteMesh = true;
                 var irt = icon.rectTransform;
                 irt.anchorMin = Vector2.zero;
                 irt.anchorMax = Vector2.one;
@@ -944,6 +945,7 @@ namespace MatchThree.Runtime
             var iconGo = new GameObject("Icon");
             iconGo.transform.SetParent(go.transform, false);
             var icon = iconGo.AddComponent<Image>();
+            icon.useSpriteMesh = true;
             icon.rectTransform.anchorMin = Vector2.zero;
             icon.rectTransform.anchorMax = Vector2.one;
             icon.rectTransform.offsetMin = new Vector2(IconInset, IconInset);

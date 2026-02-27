@@ -92,7 +92,19 @@
   - `cellFromHeight = floor((availableHeight - spacing*(rows-1)) / rows)`
   - `cellSize = min(cellFromWidth, cellFromHeight)`
 - Tuning knobs in `MatchThreeGameController`:
-  - `BoardWidthUsage` (default `0.78`) controls how much board-container width the grid targets.
+  - `BoardWidthUsage` (default `0.90`) controls how much board-container width the grid targets.
   - `HudHeight` (default `220`) controls readable top HUD space.
   - `BottomPadding` (default `110`) reserves lower safe area.
-- Icon insets for both board cells and transient animation tiles were reduced from `6` to `2` to make sprites fill cells more.
+- Icon insets for both board cells and transient animation tiles are set to `0` and `Image.useSpriteMesh = true` so artwork fills each tile cell.
+
+## Tile sprite import fixer
+- Use **Tools → MatchThree → Fix Tile Import Settings** to normalize all textures in `Assets/Tiles` in one click.
+- Current enforced defaults:
+  - `Texture Type = Sprite (2D and UI)`
+  - `Sprite Mode = Single`
+  - `Pixels Per Unit = 100`
+  - `Max Size >= 512`
+  - `Compression = None`
+  - `Filter Mode = Bilinear` (chosen for smooth/cartoon art)
+  - `Mip Maps = Disabled`
+- For larger/smaller on-board icons, tweak `IconInset` in `MatchThreeGameController` (0 to 2 is the intended range).
