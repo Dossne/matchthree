@@ -16,6 +16,11 @@ namespace MatchThree.Runtime
         private const float MinFallDurationSeconds = 0.08f;
         private const float MaxFallDurationSeconds = 0.35f;
         private const float SettleDelaySeconds = 0.04f;
+        private const float HudHeight = 220f;
+        private const float BottomPadding = 110f;
+        private const float BoardWidthUsage = 0.78f;
+        private const float BoardHeightUsage = 0.96f;
+        private const float IconInset = 2f;
 
         [SerializeField] private TextAsset levelAsset;
         [SerializeField] private string levelResourcePath = "Levels/level_000";
@@ -33,6 +38,9 @@ namespace MatchThree.Runtime
         private TileSpriteLibrary _spriteLibrary;
         private GridLayoutGroup _grid;
         private RectTransform _animationLayer;
+        private RectTransform _uiRoot;
+        private RectTransform _hud;
+        private RectTransform _boardContainer;
         private Text _status;
         private Text _goalsText;
         private LevelRuntimeConfig _runtimeConfig;
@@ -121,27 +129,55 @@ namespace MatchThree.Runtime
                 var cgo = new GameObject("Canvas");
                 canvas = cgo.AddComponent<Canvas>();
                 canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-                cgo.AddComponent<CanvasScaler>();
                 cgo.AddComponent<GraphicRaycaster>();
             }
 
+            var scaler = EnsureComponent<CanvasScaler>(canvas.gameObject);
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1080f, 1920f);
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+            scaler.matchWidthOrHeight = 0.5f;
+
+            var rootGo = FindOrCreateUiObject(canvas.transform, "Root");
+            _uiRoot = EnsureComponent<RectTransform>(rootGo);
+            _uiRoot.anchorMin = Vector2.zero;
+            _uiRoot.anchorMax = Vector2.one;
+            _uiRoot.offsetMin = Vector2.zero;
+            _uiRoot.offsetMax = Vector2.zero;
+
+            var hudGo = FindOrCreateUiObject(_uiRoot, "HUD");
+            _hud = EnsureComponent<RectTransform>(hudGo);
+            _hud.anchorMin = new Vector2(0f, 1f);
+            _hud.anchorMax = new Vector2(1f, 1f);
+            _hud.pivot = new Vector2(0.5f, 1f);
+            _hud.sizeDelta = new Vector2(0f, HudHeight);
+            _hud.anchoredPosition = Vector2.zero;
+
+            var boardContainerGo = FindOrCreateUiObject(_uiRoot, "BoardContainer");
+            _boardContainer = EnsureComponent<RectTransform>(boardContainerGo);
+            _boardContainer.anchorMin = new Vector2(0f, 0f);
+            _boardContainer.anchorMax = new Vector2(1f, 1f);
+            _boardContainer.offsetMin = new Vector2(0f, BottomPadding);
+            _boardContainer.offsetMax = new Vector2(0f, -HudHeight);
+
             var statusGo = FindOrCreateUiObject(canvas.transform, "Status");
-            statusGo.transform.SetParent(canvas.transform, false);
+            statusGo.transform.SetParent(_hud, false);
             _status = EnsureComponent<Text>(statusGo);
             _status.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             _status.alignment = TextAnchor.UpperLeft;
             _status.color = Color.white;
+            _status.fontSize = 30;
             var srt = _status.rectTransform;
-            srt.anchorMin = new Vector2(0, 1);
-            srt.anchorMax = new Vector2(1, 1);
+            srt.anchorMin = new Vector2(0, 0);
+            srt.anchorMax = new Vector2(0.65f, 1);
             srt.pivot = new Vector2(0.5f, 1);
-            srt.offsetMin = new Vector2(20, -80);
-            srt.offsetMax = new Vector2(-20, -20);
+            srt.offsetMin = new Vector2(24, 16);
+            srt.offsetMax = new Vector2(-12, -16);
 
             var gridGo = FindOrCreateUiObject(canvas.transform, "BoardGrid");
-            gridGo.transform.SetParent(canvas.transform, false);
+            gridGo.transform.SetParent(_boardContainer, false);
             _grid = EnsureComponent<GridLayoutGroup>(gridGo);
-            _grid.spacing = new Vector2(2, 2);
+            _grid.spacing = new Vector2(4, 4);
             var rt = _grid.GetComponent<RectTransform>();
             rt.anchorMin = new Vector2(0.5f, 0.5f);
             rt.anchorMax = new Vector2(0.5f, 0.5f);
@@ -156,30 +192,32 @@ namespace MatchThree.Runtime
             _animationLayer.offsetMax = Vector2.zero;
 
             var goalsGo = FindOrCreateUiObject(canvas.transform, "Goals");
-            goalsGo.transform.SetParent(canvas.transform, false);
+            goalsGo.transform.SetParent(_hud, false);
             _goalsText = EnsureComponent<Text>(goalsGo);
             _goalsText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            _goalsText.alignment = TextAnchor.UpperRight;
+            _goalsText.alignment = TextAnchor.UpperLeft;
             _goalsText.color = Color.white;
+            _goalsText.fontSize = 32;
             var grt = _goalsText.rectTransform;
-            grt.anchorMin = new Vector2(0, 1);
-            grt.anchorMax = new Vector2(1, 1);
+            grt.anchorMin = new Vector2(0, 0);
+            grt.anchorMax = new Vector2(0.72f, 1);
             grt.pivot = new Vector2(0.5f, 1);
-            grt.offsetMin = new Vector2(20, -180);
-            grt.offsetMax = new Vector2(-20, -90);
+            grt.offsetMin = new Vector2(24, 16);
+            grt.offsetMax = new Vector2(-12, -74);
 
             var movesGo = FindOrCreateUiObject(canvas.transform, "Moves");
-            movesGo.transform.SetParent(canvas.transform, false);
+            movesGo.transform.SetParent(_hud, false);
             _movesCounter = EnsureComponent<Text>(movesGo);
             _movesCounter.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            _movesCounter.alignment = TextAnchor.UpperCenter;
+            _movesCounter.alignment = TextAnchor.UpperRight;
             _movesCounter.color = Color.white;
+            _movesCounter.fontSize = 42;
             var mrt = _movesCounter.rectTransform;
-            mrt.anchorMin = new Vector2(0, 1);
-            mrt.anchorMax = new Vector2(1, 1);
+            mrt.anchorMin = new Vector2(0.6f, 0f);
+            mrt.anchorMax = new Vector2(1f, 1f);
             mrt.pivot = new Vector2(0.5f, 1);
-            mrt.offsetMin = new Vector2(20, -220);
-            mrt.offsetMax = new Vector2(-20, -180);
+            mrt.offsetMin = new Vector2(12, 16);
+            mrt.offsetMax = new Vector2(-24, -16);
 
             _winPanel = BuildOverlayPanel(canvas.transform, "WinPanel", "You Win!", "Next", LoadNextLevel);
             _losePanel = BuildOverlayPanel(canvas.transform, "LosePanel", "You Lose!", "Retry", RetryLevel);
@@ -403,10 +441,7 @@ namespace MatchThree.Runtime
             _cells.Clear();
             _grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
             _grid.constraintCount = _board.Width;
-            _grid.cellSize = new Vector2(70, 70);
-
-            var rt = _grid.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(_board.Width * 72, _board.Height * 72);
+            ConfigureBoardLayout();
 
             for (var y = 0; y < _board.Height; y++)
             for (var x = 0; x < _board.Width; x++)
@@ -427,8 +462,8 @@ namespace MatchThree.Runtime
                 var irt = icon.rectTransform;
                 irt.anchorMin = Vector2.zero;
                 irt.anchorMax = Vector2.one;
-                irt.offsetMin = new Vector2(6, 6);
-                irt.offsetMax = new Vector2(-6, -6);
+                irt.offsetMin = new Vector2(IconInset, IconInset);
+                irt.offsetMax = new Vector2(-IconInset, -IconInset);
 
                 var labelGo = new GameObject("Label");
                 labelGo.transform.SetParent(go.transform, false);
@@ -874,6 +909,29 @@ namespace MatchThree.Runtime
             return localPoint;
         }
 
+        private void ConfigureBoardLayout()
+        {
+            Canvas.ForceUpdateCanvases();
+
+            var cols = Mathf.Max(1, _board.Width);
+            var rows = Mathf.Max(1, _board.Height);
+            var spacingX = _grid.spacing.x;
+            var spacingY = _grid.spacing.y;
+            var availableWidth = Mathf.Max(1f, _boardContainer.rect.width * BoardWidthUsage);
+            var availableHeight = Mathf.Max(1f, _boardContainer.rect.height * BoardHeightUsage);
+
+            var cellFromWidth = Mathf.Floor((availableWidth - spacingX * (cols - 1)) / cols);
+            var cellFromHeight = Mathf.Floor((availableHeight - spacingY * (rows - 1)) / rows);
+            var cellSize = Mathf.Max(1f, Mathf.Min(cellFromWidth, cellFromHeight));
+
+            _grid.cellSize = new Vector2(cellSize, cellSize);
+
+            var gridWidth = cellSize * cols + spacingX * (cols - 1);
+            var gridHeight = cellSize * rows + spacingY * (rows - 1);
+            var rt = _grid.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(gridWidth, gridHeight);
+        }
+
         private TransientTile CreateTransientTile(TileEntitySnapshot tile, BoardPosition at)
         {
             var go = new GameObject("TransientTile");
@@ -888,8 +946,8 @@ namespace MatchThree.Runtime
             var icon = iconGo.AddComponent<Image>();
             icon.rectTransform.anchorMin = Vector2.zero;
             icon.rectTransform.anchorMax = Vector2.one;
-            icon.rectTransform.offsetMin = new Vector2(6, 6);
-            icon.rectTransform.offsetMax = new Vector2(-6, -6);
+            icon.rectTransform.offsetMin = new Vector2(IconInset, IconInset);
+            icon.rectTransform.offsetMax = new Vector2(-IconInset, -IconInset);
 
             var visual = ResolveVisual(tile);
             if (visual.Sprite != null)

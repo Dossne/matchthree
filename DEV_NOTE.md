@@ -78,3 +78,21 @@
   - `WinPanel` with `You Win!` + `Next` button.
   - `LosePanel` with `You Lose!` + `Retry` button.
 - Overlays are shown only when game state enters `Won`/`Lost`; they are hidden after level initialization.
+
+## Portrait board sizing + HUD layout
+- Runtime UI now forces `CanvasScaler` to:
+  - `Scale With Screen Size`
+  - reference resolution `1080x1920`
+  - screen match mode `Match Width Or Height` with match `0.5`
+- A top-level `Root` rect is split into:
+  - `HUD` (top band, default `220` units high)
+  - `BoardContainer` (center play area between HUD and bottom padding)
+- `BuildGrid()` no longer uses hardcoded tile size. Cell size is computed dynamically from available board space:
+  - `cellFromWidth = floor((availableWidth - spacing*(cols-1)) / cols)`
+  - `cellFromHeight = floor((availableHeight - spacing*(rows-1)) / rows)`
+  - `cellSize = min(cellFromWidth, cellFromHeight)`
+- Tuning knobs in `MatchThreeGameController`:
+  - `BoardWidthUsage` (default `0.78`) controls how much board-container width the grid targets.
+  - `HudHeight` (default `220`) controls readable top HUD space.
+  - `BottomPadding` (default `110`) reserves lower safe area.
+- Icon insets for both board cells and transient animation tiles were reduced from `6` to `2` to make sprites fill cells more.
