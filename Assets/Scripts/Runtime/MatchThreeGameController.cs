@@ -10,6 +10,7 @@ namespace MatchThree.Runtime
 {
     public sealed class MatchThreeGameController : MonoBehaviour
     {
+        private const string DefaultLevelResourcePath = "Levels/level_000";
         private const float SwapDurationSeconds = 0.10f;
         private const float ClearDurationSeconds = 0.08f;
         private const float FallPerCellSeconds = 0.06f;
@@ -292,25 +293,38 @@ namespace MatchThree.Runtime
             }
             catch (System.Exception ex)
             {
+                Debug.LogError($"[MatchThreeGameController] Registry parse/load failed: {ex.Message}. Falling back to '{DefaultLevelResourcePath}'.");
                 if (_levels.Count > 0)
                 {
                     return true;
                 }
 
-                error = ex.Message;
+                if (TryAddFallbackLevel(out error))
+                {
+                    return true;
+                }
+
                 return false;
             }
 
             foreach (var definition in registryDefinitions)
             {
-                var asset = Resources.Load<TextAsset>(definition.LevelPath);
+                var levelPath = string.IsNullOrWhiteSpace(definition.LevelPath) ? DefaultLevelResourcePath : definition.LevelPath;
+                var asset = Resources.Load<TextAsset>(levelPath);
                 if (asset == null)
                 {
-                    error = $"Missing level asset at Resources/{definition.LevelPath}";
+                    Debug.LogWarning($"[MatchThreeGameController] Missing level asset at Resources/{levelPath}; trying fallback '{DefaultLevelResourcePath}'.");
+
+                    if (TryAddFallbackLevel(out error))
+                    {
+                        return true;
+                    }
+
                     return false;
                 }
 
-                _levels.Add(new RuntimeLevelData(definition.LevelPath, asset, definition));
+                definition.LevelPath = levelPath;
+                _levels.Add(new RuntimeLevelData(levelPath, asset, definition));
             }
 
             if (_levels.Count == 0)
@@ -319,6 +333,31 @@ namespace MatchThree.Runtime
                 return false;
             }
 
+            return true;
+        }
+
+        private bool TryAddFallbackLevel(out string error)
+        {
+            var fallbackAsset = Resources.Load<TextAsset>(DefaultLevelResourcePath);
+            if (fallbackAsset == null)
+            {
+                error = $"Missing fallback level asset at Resources/{DefaultLevelResourcePath}";
+                return false;
+            }
+
+            var fallbackDefinition = new LevelDefinition
+            {
+                LevelPath = DefaultLevelResourcePath,
+                MaxMoves = 20,
+                Goals = new List<GoalDefinition>
+                {
+                    new CollectColorGoalDefinition(1, 10)
+                }
+            };
+
+            _levels.Add(new RuntimeLevelData(DefaultLevelResourcePath, fallbackAsset, fallbackDefinition));
+            error = null;
+            Debug.Log($"[MatchThreeGameController] Added fallback level '{DefaultLevelResourcePath}'.");
             return true;
         }
 
