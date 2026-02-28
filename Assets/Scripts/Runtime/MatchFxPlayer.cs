@@ -8,11 +8,17 @@ namespace MatchThree.Runtime
 {
     public sealed class MatchFxPlayer
     {
+        private const float RocketFxDurationSeconds = 0.16f;
+        private const float BombFxDurationSeconds = 0.18f;
+        private const float LightningFxDurationSeconds = 0.14f;
+
         private readonly MonoBehaviour _host;
         private readonly RectTransform _animationLayer;
         private readonly System.Func<Rect> _boardRectProvider;
         private readonly System.Func<BoardPosition, Vector2> _cellPositionProvider;
         private readonly System.Func<Vector2> _cellSizeProvider;
+        private Sprite _bombPulseSprite;
+        private bool _didResolveBombSprite;
 
         public MatchFxPlayer(
             MonoBehaviour host,
@@ -74,12 +80,11 @@ namespace MatchThree.Runtime
                 rect.anchoredPosition = new Vector2(center.x, boardRect.center.y);
             }
 
-            const float duration = 0.16f;
             var elapsed = 0f;
-            while (elapsed < duration)
+            while (elapsed < RocketFxDurationSeconds)
             {
                 elapsed += Time.deltaTime;
-                var t = Mathf.Clamp01(elapsed / duration);
+                var t = Mathf.Clamp01(elapsed / RocketFxDurationSeconds);
                 var alpha = Mathf.Sin(t * Mathf.PI) * 0.42f;
                 image.color = SetAlpha(image.color, alpha);
                 yield return null;
@@ -96,18 +101,19 @@ namespace MatchThree.Runtime
             var rect = fx.AddComponent<RectTransform>();
             var image = fx.AddComponent<Image>();
             image.color = new Color(1f, 0.92f, 0.45f, 0.35f);
+            image.sprite = ResolveBombPulseSprite();
+            image.type = Image.Type.Simple;
 
             var cellSize = _cellSizeProvider();
             rect.sizeDelta = cellSize * 0.9f;
             rect.anchoredPosition = _cellPositionProvider(position);
             rect.localScale = Vector3.one * 0.5f;
 
-            const float duration = 0.18f;
             var elapsed = 0f;
-            while (elapsed < duration)
+            while (elapsed < BombFxDurationSeconds)
             {
                 elapsed += Time.deltaTime;
-                var t = Mathf.Clamp01(elapsed / duration);
+                var t = Mathf.Clamp01(elapsed / BombFxDurationSeconds);
                 rect.localScale = Vector3.one * Mathf.LerpUnclamped(0.5f, 2.2f, t);
                 image.color = SetAlpha(image.color, 0.42f * (1f - t));
                 yield return null;
@@ -130,12 +136,11 @@ namespace MatchThree.Runtime
             var image = fx.AddComponent<Image>();
             image.color = new Color(1f, 1f, 0.88f, 0f);
 
-            const float duration = 0.14f;
             var elapsed = 0f;
-            while (elapsed < duration)
+            while (elapsed < LightningFxDurationSeconds)
             {
                 elapsed += Time.deltaTime;
-                var t = Mathf.Clamp01(elapsed / duration);
+                var t = Mathf.Clamp01(elapsed / LightningFxDurationSeconds);
                 var alpha = Mathf.Sin(t * Mathf.PI) * 0.18f;
                 image.color = SetAlpha(image.color, alpha);
                 yield return null;
@@ -148,6 +153,20 @@ namespace MatchThree.Runtime
         {
             color.a = alpha;
             return color;
+        }
+
+        private Sprite ResolveBombPulseSprite()
+        {
+            if (_didResolveBombSprite)
+            {
+                return _bombPulseSprite;
+            }
+
+            _didResolveBombSprite = true;
+
+            // Prefer a circular-looking built-in UI sprite; fallback to default square image when unavailable.
+            _bombPulseSprite = Resources.GetBuiltinResource<Sprite>("UI/Skin/Knob.psd");
+            return _bombPulseSprite;
         }
     }
 }
