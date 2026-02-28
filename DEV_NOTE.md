@@ -160,7 +160,7 @@
   - Runs on pushes to `main`.
 - Checks included:
   1. Merge conflict marker scan (`<<<<<<<`, `=======`, `>>>>>>>`) across tracked text files.
-  2. JSON validation + schema checks for `Assets/Resources/Levels/level_registry.json`.
+  2. JSON validation + schema checks for `Assets/Resources/Levels/level_registry.json` (`levels[]`, non-empty `levelResourcePath` or `levelPath`, integer `maxMoves`, array `goals`).
 
 ### Run locally
 - Merge marker scan:
