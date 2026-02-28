@@ -45,6 +45,8 @@ namespace MatchThree.Runtime
 
         private Text _status;
         private GoalHudView _goalHudView;
+        private int _lastHudMovesRemaining = -1;
+        private int _lastHudGoalHash;
 
         private MatchThree.Core.MoveCounter _moveCounter;
         private GoalTracker _goalTracker;
@@ -118,6 +120,8 @@ namespace MatchThree.Runtime
 
         private void Update()
         {
+            RefreshHudIfDirty();
+
             if (_resolver == null || _isAnimating) return;
             if (!Input.GetKeyDown(KeyCode.M)) return;
 
@@ -262,6 +266,7 @@ namespace MatchThree.Runtime
             _gameStateController = new GameStateController(_goalTracker, _moveCounter);
 
             BuildGrid();
+            ResetHudCache();
             RefreshHud();
 
             _status.text = "Make a move.";
@@ -898,6 +903,64 @@ namespace MatchThree.Runtime
             if (_goalHudView == null) return;
             _goalHudView.UpdateGoals(_goalTracker, _spriteLibrary);
             _goalHudView.UpdateMoves(_moveCounter);
+            CacheHudState();
+        }
+
+        private void RefreshHudIfDirty()
+        {
+            if (_goalHudView == null || _moveCounter == null || _goalTracker == null)
+            {
+                return;
+            }
+
+            if (_lastHudMovesRemaining != _moveCounter.Remaining || _lastHudGoalHash != ComputeGoalProgressHash())
+            {
+                RefreshHud();
+            }
+        }
+
+        private void ResetHudCache()
+        {
+            _lastHudMovesRemaining = -1;
+            _lastHudGoalHash = int.MinValue;
+        }
+
+        private void CacheHudState()
+        {
+            _lastHudMovesRemaining = _moveCounter != null ? _moveCounter.Remaining : -1;
+            _lastHudGoalHash = ComputeGoalProgressHash();
+        }
+
+        private int ComputeGoalProgressHash()
+        {
+            if (_goalTracker == null)
+            {
+                return 0;
+            }
+
+            unchecked
+            {
+                var hash = 17;
+                foreach (var progress in _goalTracker.GetProgress())
+                {
+                    switch (progress)
+                    {
+                        case CollectColorProgress collect:
+                            hash = (hash * 31) + collect.ColorId;
+                            hash = (hash * 31) + collect.Current;
+                            hash = (hash * 31) + collect.Target;
+                            break;
+                        case ClearAllRocksProgress rocks:
+                            hash = (hash * 31) + rocks.RemainingRocks;
+                            break;
+                        default:
+                            hash = (hash * 31) + (int)progress.GoalType;
+                            break;
+                    }
+                }
+
+                return hash;
+            }
         }
 
         private void ApplyVisual(CellView view, TileEntity tile, bool isPlayable)
