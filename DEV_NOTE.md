@@ -153,3 +153,20 @@
 - `MatchThreeGameController.EnsureUi()` controls panel anchoring/splits:
   - `GoalsPanel` occupies left side of HUD.
   - `MovesPanel` occupies right side of HUD.
+
+## CI quality gates (merge markers + registry validation)
+- GitHub Actions workflow: `.github/workflows/quality-gates.yml`
+  - Runs on every pull request.
+  - Runs on pushes to `main`.
+- Checks included:
+  1. Merge conflict marker scan (`<<<<<<<`, `=======`, `>>>>>>>`) across tracked text files.
+  2. JSON validation + schema checks for `Assets/Resources/Levels/level_registry.json`.
+
+### Run locally
+- Merge marker scan:
+  - `bash Tools/check_conflict_markers.sh`
+- Level registry validation:
+  - `python -m json.tool Assets/Resources/Levels/level_registry.json > /dev/null`
+  - `python Tools/check_registry_json.py`
+
+These checks are lightweight and do not require Unity installation or a Unity license.
