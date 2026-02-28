@@ -1,0 +1,29 @@
+name: quality-gates
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  conflict-markers:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check for merge conflict markers
+        run: bash Tools/check_conflict_markers.sh
+
+  validate-registry-json:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate level registry is valid JSON
+        run: python -m json.tool Assets/Resources/Levels/level_registry.json > /dev/null
+
+      - name: Validate level registry schema
+        run: python Tools/check_registry_json.py
