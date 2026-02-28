@@ -184,7 +184,8 @@ namespace MatchThree.Runtime
                 for (var x = 0; x < texture.width; x++)
                 {
                     var distance = Vector2.Distance(new Vector2(x, y), center) / maxDistance;
-                    var alpha = Mathf.Clamp01(1f - distance);
+                    var radialFalloff = Mathf.SmoothStep(1f, 0f, Mathf.Clamp01(distance));
+                    var alpha = radialFalloff * radialFalloff;
                     texture.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
                 }
             }
