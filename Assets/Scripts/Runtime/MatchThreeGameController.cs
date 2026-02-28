@@ -12,11 +12,11 @@ namespace MatchThree.Runtime
     {
         private const string DefaultLevelResourcePath = "Levels/level_000";
         private const float SwapDurationSeconds = 0.10f;
-        private const float ClearDurationSeconds = 0.14f;
-        private const float FallPerCellSeconds = 0.06f;
-        private const float MinFallDurationSeconds = 0.08f;
-        private const float MaxFallDurationSeconds = 0.35f;
-        private const float SettleDelaySeconds = 0.10f;
+        private const float ClearDurationSeconds = 0.22f;
+        private const float FallPerCellSeconds = 0.08f;
+        private const float MinFallDurationSeconds = 0.10f;
+        private const float MaxFallDurationSeconds = 0.48f;
+        private const float SettleDelaySeconds = 0.14f;
 
         // UI layout tuning (portrait)
         private const float HudHeight = 220f;
@@ -696,14 +696,17 @@ namespace MatchThree.Runtime
                 }
 
                 var elapsed = 0f;
+                const float popPhase = 0.28f;
                 while (elapsed < ClearDurationSeconds)
                 {
                     elapsed += Time.deltaTime;
                     var t = Mathf.Clamp01(elapsed / ClearDurationSeconds);
-                    var flash = Mathf.Clamp01(1f - (t / 0.35f));
+                    var popT = Mathf.Clamp01(t / popPhase);
+                    var fadeT = Mathf.Clamp01((t - popPhase) / (1f - popPhase));
+                    var flash = Mathf.Clamp01(1f - (t / 0.5f));
                     foreach (var view in removedViews)
                     {
-                        var alpha = 1f - t;
+                        var alpha = 1f - fadeT;
 
                         var litBackground = Color.Lerp(view.BaseBackgroundColor, Color.white, 0.18f * flash);
                         var litIcon = Color.Lerp(view.BaseIconColor, Color.white, 0.22f * flash);
@@ -711,9 +714,9 @@ namespace MatchThree.Runtime
                         view.Background.color = SetAlpha(litBackground, alpha);
                         view.Icon.color = SetAlpha(litIcon, alpha);
 
-                        var scale = t < 0.34f
-                            ? Mathf.LerpUnclamped(1f, 1.08f, t / 0.34f)
-                            : Mathf.LerpUnclamped(1.08f, 0.85f, (t - 0.34f) / 0.66f);
+                        var scale = t < popPhase
+                            ? Mathf.LerpUnclamped(1f, 1.16f, popT)
+                            : Mathf.LerpUnclamped(1.16f, 0.78f, fadeT);
                         view.Root.localScale = Vector3.one * scale;
                     }
                     yield return null;
