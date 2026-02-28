@@ -31,12 +31,13 @@
 - Clear animation now uses `0.14s` and includes a more readable pop + flash (brief scale-up, then shrink while fading).
 - Falls/spawns animate per distance:
   - `duration = clamp(distance * 0.06s, 0.08s, 0.35s)`
-- Each resolve step adds a `0.10s` settle delay so cascades read as distinct beats (clear -> fall -> next clear).
+- Resolve now inserts a `0.10s` settle delay **between** changed resolve steps so cascades read as distinct beats (clear -> fall -> next clear) without adding extra tail latency after the final step.
 - Core resolver now exposes per-step removed tile snapshots, movements, and spawn metadata to keep view animation data-driven and independent from gameplay logic.
 - Booster FX cues are now played on the transient animation layer (`MatchFxPlayer`):
   - Rocket: fast line sweep on the affected row/column.
-  - Bomb: pulse burst at detonation cell.
+  - Bomb: pulse burst at detonation cell (tries a circular built-in UI sprite, safely falls back if unavailable).
   - Lightning: subtle screen flash.
+- Quick FX tuning constants now live in `MatchFxPlayer` (`RocketFxDurationSeconds`, `BombFxDurationSeconds`, `LightningFxDurationSeconds`).
 - If a resolve step reports `CreatedSpecials`, the created booster tile scales in (`0.6 -> 1.0` over `0.12s`) with a brief glow pulse.
 - Tuning knobs live in `MatchThreeGameController` constants (`SwapDurationSeconds`, `ClearDurationSeconds`, `SettleDelaySeconds`, fall timing constants) and in `MatchFxPlayer` coroutine durations/colors.
 

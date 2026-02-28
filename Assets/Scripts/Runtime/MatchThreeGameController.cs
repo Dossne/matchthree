@@ -620,9 +620,16 @@ namespace MatchThree.Runtime
                 yield break;
             }
 
-            foreach (var step in result.Steps)
+            for (var i = 0; i < result.Steps.Count; i++)
             {
+                var step = result.Steps[i];
                 yield return AnimateResolveStep(step);
+
+                var hasNextStep = i < result.Steps.Count - 1;
+                if (step.DidChange && hasNextStep)
+                {
+                    yield return new WaitForSeconds(SettleDelaySeconds);
+                }
             }
 
             _moveCounter.ConsumeIfAccepted(result);
@@ -769,7 +776,6 @@ namespace MatchThree.Runtime
                 yield return AnimateCreatedSpecials(step.CreatedSpecials);
             }
 
-            if (step.DidChange) yield return new WaitForSeconds(SettleDelaySeconds);
         }
 
         private IEnumerator AnimateCreatedSpecials(IEnumerable<(BoardPosition Position, SpecialType Type)> createdSpecials)
