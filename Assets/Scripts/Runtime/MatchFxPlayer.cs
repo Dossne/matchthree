@@ -19,6 +19,7 @@ namespace MatchThree.Runtime
         private readonly System.Func<Vector2> _cellSizeProvider;
         private Sprite _bombPulseSprite;
         private bool _didResolveBombSprite;
+        private static bool _didWarnBombPulseFallback;
 
         public MatchFxPlayer(
             MonoBehaviour host,
@@ -164,8 +165,39 @@ namespace MatchThree.Runtime
 
             _didResolveBombSprite = true;
 
-            // Prefer a circular-looking built-in UI sprite; fallback to default square image when unavailable.
-            _bombPulseSprite = Resources.GetBuiltinResource<Sprite>("UI/Skin/Knob.psd");
+            _bombPulseSprite = Resources.Load<Sprite>("Fx/bomb_pulse");
+            if (_bombPulseSprite != null)
+            {
+                return _bombPulseSprite;
+            }
+
+            var texture = new Texture2D(64, 64, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+
+            var center = new Vector2(31.5f, 31.5f);
+            var maxDistance = 31.5f;
+            for (var y = 0; y < texture.height; y++)
+            {
+                for (var x = 0; x < texture.width; x++)
+                {
+                    var distance = Vector2.Distance(new Vector2(x, y), center) / maxDistance;
+                    var alpha = Mathf.Clamp01(1f - distance);
+                    texture.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+                }
+            }
+
+            texture.Apply();
+            _bombPulseSprite = Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height), new Vector2(0.5f, 0.5f), 100f);
+
+            if (!_didWarnBombPulseFallback)
+            {
+                _didWarnBombPulseFallback = true;
+                Debug.LogWarning("[MatchFxPlayer] Missing Resources/Fx/bomb_pulse sprite; using procedural bomb pulse fallback.");
+            }
+
             return _bombPulseSprite;
         }
     }
