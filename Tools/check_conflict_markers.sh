@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Scans tracked text files for unresolved merge conflict markers.
-# Excludes generated/build folders and common binary file extensions.
+# Scan tracked text files for unresolved merge conflict markers.
+# Excludes generated/build folders and common binary extensions.
 
-binary_ext_regex='\.(png|jpg|jpeg|gif|bmp|tif|tiff|webp|ico|psd|ai|mp3|wav|ogg|flac|aac|mp4|mov|avi|mkv|webm|unitypackage|dll|so|dylib|exe|bin|zip|gz|7z|rar|pdf|ttf|otf|woff|woff2|eot|assetbundle)$'
-marker_regex='^(<<<<<<<|=======|>>>>>>>)'
+readonly binary_ext_regex='\.(png|jpg|jpeg|webp|gif|wav|mp3|mp4|dll|exe|unitypackage)$'
+readonly marker_regex='^(<{7}|={7}|>{7})'
 
 found=0
 
@@ -20,21 +20,16 @@ while IFS= read -r -d '' file; do
     continue
   fi
 
-  if [[ ! -f "$file" ]]; then
-    continue
-  fi
+  [[ -f "$file" ]] || continue
 
-  if grep -nE -I "$marker_regex" "$file" > /tmp/conflict_markers_match.txt; then
-    while IFS= read -r line; do
-      echo "$file:$line"
-    done < /tmp/conflict_markers_match.txt
+  if grep -nHE -I "$marker_regex" "$file"; then
     found=1
   fi
 done < <(git ls-files -z)
 
 if [[ $found -ne 0 ]]; then
   echo
-  echo "ERROR: Merge conflict markers were found. Resolve all markers above." >&2
+  echo "ERROR: Merge conflict markers were found. Resolve all markers listed above." >&2
   exit 1
 fi
 
