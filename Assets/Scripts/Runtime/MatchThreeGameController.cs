@@ -44,8 +44,7 @@ namespace MatchThree.Runtime
         private RectTransform _animationLayer;
 
         private Text _status;
-        private Text _goalsText;
-        private Text _movesCounter;
+        private GoalHudView _goalHudView;
 
         private MatchThree.Core.MoveCounter _moveCounter;
         private GoalTracker _goalTracker;
@@ -104,6 +103,7 @@ namespace MatchThree.Runtime
             EnsureUi();
 
             _spriteLibrary = TileSpriteLibrary.LoadFromTilesFolder();
+            _goalHudView?.UpdateGoals(_goalTracker, _spriteLibrary);
 
             if (!TryBuildLevelList(out var error))
             {
@@ -195,35 +195,26 @@ namespace MatchThree.Runtime
             srt.offsetMin = new Vector2(24, 16);
             srt.offsetMax = new Vector2(-12, -16);
 
-            // Goals
-            var goalsGo = FindOrCreateUiObject(_hud, "Goals");
-            _goalsText = EnsureComponent<Text>(goalsGo);
-            _goalsText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            _goalsText.alignment = TextAnchor.UpperLeft;
-            _goalsText.color = Color.white;
-            _goalsText.fontSize = 32;
+            // Goals panel
+            var goalsPanelGo = FindOrCreateUiObject(_hud, "GoalsPanel");
+            var goalsPanel = EnsureComponent<RectTransform>(goalsPanelGo);
+            goalsPanel.anchorMin = new Vector2(0f, 0f);
+            goalsPanel.anchorMax = new Vector2(0.7f, 1f);
+            goalsPanel.pivot = new Vector2(0f, 1f);
+            goalsPanel.offsetMin = new Vector2(24f, 16f);
+            goalsPanel.offsetMax = new Vector2(-12f, -78f);
 
-            var grt = _goalsText.rectTransform;
-            grt.anchorMin = new Vector2(0, 0);
-            grt.anchorMax = new Vector2(0.72f, 1);
-            grt.pivot = new Vector2(0.5f, 1);
-            grt.offsetMin = new Vector2(24, 16);
-            grt.offsetMax = new Vector2(-12, -74);
+            // Moves panel
+            var movesPanelGo = FindOrCreateUiObject(_hud, "MovesPanel");
+            var movesPanel = EnsureComponent<RectTransform>(movesPanelGo);
+            movesPanel.anchorMin = new Vector2(0.7f, 0f);
+            movesPanel.anchorMax = new Vector2(1f, 1f);
+            movesPanel.pivot = new Vector2(1f, 1f);
+            movesPanel.offsetMin = new Vector2(12f, 16f);
+            movesPanel.offsetMax = new Vector2(-24f, -24f);
 
-            // Moves
-            var movesGo = FindOrCreateUiObject(_hud, "Moves");
-            _movesCounter = EnsureComponent<Text>(movesGo);
-            _movesCounter.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            _movesCounter.alignment = TextAnchor.UpperRight;
-            _movesCounter.color = Color.white;
-            _movesCounter.fontSize = 42;
-
-            var mrt = _movesCounter.rectTransform;
-            mrt.anchorMin = new Vector2(0.6f, 0f);
-            mrt.anchorMax = new Vector2(1f, 1f);
-            mrt.pivot = new Vector2(0.5f, 1);
-            mrt.offsetMin = new Vector2(12, 16);
-            mrt.offsetMax = new Vector2(-24, -16);
+            var hudFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            _goalHudView = new GoalHudView(goalsPanel, movesPanel, hudFont);
 
             // Grid (inside board container)
             var gridGo = FindOrCreateUiObject(_boardContainer, "BoardGrid");
@@ -268,8 +259,7 @@ namespace MatchThree.Runtime
             _gameStateController = new GameStateController(_goalTracker, _moveCounter);
 
             BuildGrid();
-            UpdateMovesCounterLabel();
-            RefreshGoalsUi();
+            RefreshHud();
 
             _status.text = "Make a move.";
             SetInputEnabled(true);
@@ -634,8 +624,7 @@ namespace MatchThree.Runtime
 
             _moveCounter.ConsumeIfAccepted(result);
             _goalTracker.ApplyMoveResult(result);
-            UpdateMovesCounterLabel();
-            RefreshGoalsUi();
+            RefreshHud();
             UpdateStatusAfterEvaluation();
 
             _isAnimating = false;
@@ -828,10 +817,11 @@ namespace MatchThree.Runtime
             }
         }
 
-        private void UpdateMovesCounterLabel()
+        private void RefreshHud()
         {
-            if (_movesCounter == null || _moveCounter == null) return;
-            _movesCounter.text = $"Moves: {_moveCounter.Remaining}/{_moveCounter.MaxMoves}";
+            if (_goalHudView == null) return;
+            _goalHudView.UpdateGoals(_goalTracker, _spriteLibrary);
+            _goalHudView.UpdateMoves(_moveCounter);
         }
 
         private void ApplyVisual(CellView view, TileEntity tile, bool isPlayable)
@@ -1097,25 +1087,5 @@ namespace MatchThree.Runtime
             _ => Color.white
         };
 
-        private void RefreshGoalsUi()
-        {
-            if (_goalsText == null || _goalTracker == null) return;
-
-            var lines = new List<string> { "Goals:" };
-            foreach (var progress in _goalTracker.GetProgress())
-            {
-                switch (progress)
-                {
-                    case CollectColorProgress collect:
-                        lines.Add($"- Collect color {collect.ColorId}: {collect.Current}/{collect.Target}");
-                        break;
-                    case ClearAllRocksProgress rocks:
-                        lines.Add($"- Clear Rocks: {rocks.RemainingRocks} remaining");
-                        break;
-                }
-            }
-
-            _goalsText.text = string.Join("\n", lines);
-        }
     }
 }

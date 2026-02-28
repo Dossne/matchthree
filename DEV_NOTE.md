@@ -131,3 +131,19 @@
 3. Keep goals achievable:
    - include `ClearAllRocks` only if the board has `R`/`B` tiles.
    - keep collect targets realistic for the board size + move limit.
+
+## HUD v2 (goal icons + big moves)
+- Text goals list was replaced with a runtime `GoalHudView` (`Assets/Scripts/Runtime/GoalHudView.cs`).
+- Goal icon mapping now uses `TileSpriteLibrary` directly:
+  - `CollectColorProgress` -> `GetNormalSprite(colorId)`
+  - `ClearAllRocksProgress` -> `GetObstacleSprite(ObstacleSpriteType.Rock)`
+- If a goal sprite is missing, HUD falls back to a dark placeholder tile with a short label (`C{id}` / `Rock`) and still shows the counter.
+- Moves panel now renders a large remaining value (`62` font size by default) and a smaller `/Max` line below.
+
+### HUD tuning knobs
+- `GoalHudView` sizing and readability tweaks:
+  - Moves text sizes: `Value` (default `62`), `Max` (default `24`), label (default `30`).
+  - Goal item footprint and icon size: `GoalItem` (`130x120`) and `IconRoot` (`70x70`).
+- `MatchThreeGameController.EnsureUi()` controls panel anchoring/splits:
+  - `GoalsPanel` occupies left side of HUD.
+  - `MovesPanel` occupies right side of HUD.
