@@ -9,17 +9,17 @@
     },
     {
       "levelResourcePath": "Levels/level_001",
-      "maxMoves": 24,
+      "maxMoves": 22,
       "goals": [
-        { "type": "CollectColor", "colorId": 2, "target": 12 },
+        { "type": "CollectColor", "colorId": 2, "target": 13 },
         { "type": "ClearAllRocks" }
       ]
     },
     {
       "levelResourcePath": "Levels/level_002",
-      "maxMoves": 26,
+      "maxMoves": 23,
       "goals": [
-        { "type": "CollectColor", "colorId": 3, "target": 14 },
+        { "type": "CollectColor", "colorId": 3, "target": 15 },
         { "type": "ClearAllRocks" }
       ]
     }
