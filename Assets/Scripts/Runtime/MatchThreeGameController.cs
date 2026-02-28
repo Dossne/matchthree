@@ -12,11 +12,11 @@ namespace MatchThree.Runtime
     {
         private const string DefaultLevelResourcePath = "Levels/level_000";
         private const float SwapDurationSeconds = 0.10f;
-        private const float ClearDurationSeconds = 0.08f;
+        private const float ClearDurationSeconds = 0.14f;
         private const float FallPerCellSeconds = 0.06f;
         private const float MinFallDurationSeconds = 0.08f;
         private const float MaxFallDurationSeconds = 0.35f;
-        private const float SettleDelaySeconds = 0.04f;
+        private const float SettleDelaySeconds = 0.10f;
 
         // UI layout tuning (portrait)
         private const float HudHeight = 220f;
@@ -49,6 +49,7 @@ namespace MatchThree.Runtime
         private MatchThree.Core.MoveCounter _moveCounter;
         private GoalTracker _goalTracker;
         private GameStateController _gameStateController;
+        private MatchFxPlayer _fxPlayer;
 
         private GameObject _winPanel;
         private GameObject _losePanel;
@@ -233,6 +234,8 @@ namespace MatchThree.Runtime
             _animationLayer.anchorMax = Vector2.one;
             _animationLayer.offsetMin = Vector2.zero;
             _animationLayer.offsetMax = Vector2.zero;
+
+            _fxPlayer = new MatchFxPlayer(this, _animationLayer, GetBoardRectOnAnimationLayer, CellPosition, () => _grid.cellSize);
 
             // Overlays
             _winPanel = BuildOverlayPanel(canvas.transform, "WinPanel", "You Win!", "Next", LoadNextLevel);
@@ -669,6 +672,13 @@ namespace MatchThree.Runtime
         {
             if (step.RemovedTiles.Count > 0)
             {
+                var activatedSpecials = step.RemovedTiles
+                    .Where(t => t.Tile.Kind == TileKind.Special)
+                    .Select(t => (t.Position, t.Tile.SpecialType))
+                    .Distinct()
+                    .ToList();
+                _fxPlayer?.PlaySpecialActivationFx(activatedSpecials);
+
                 var removedViews = new List<TransientTile>(step.RemovedTiles.Count);
                 var hidden = step.RemovedTiles.Select(r => r.Position).ToList();
                 SetCellsVisible(hidden, false);
@@ -683,12 +693,21 @@ namespace MatchThree.Runtime
                 {
                     elapsed += Time.deltaTime;
                     var t = Mathf.Clamp01(elapsed / ClearDurationSeconds);
+                    var flash = Mathf.Clamp01(1f - (t / 0.35f));
                     foreach (var view in removedViews)
                     {
                         var alpha = 1f - t;
-                        view.Background.color = SetAlpha(view.Background.color, alpha);
-                        view.Icon.color = SetAlpha(view.Icon.color, alpha);
-                        view.Root.localScale = Vector3.one * (1f - 0.25f * t);
+
+                        var litBackground = Color.Lerp(view.BaseBackgroundColor, Color.white, 0.18f * flash);
+                        var litIcon = Color.Lerp(view.BaseIconColor, Color.white, 0.22f * flash);
+
+                        view.Background.color = SetAlpha(litBackground, alpha);
+                        view.Icon.color = SetAlpha(litIcon, alpha);
+
+                        var scale = t < 0.34f
+                            ? Mathf.LerpUnclamped(1f, 1.08f, t / 0.34f)
+                            : Mathf.LerpUnclamped(1.08f, 0.85f, (t - 0.34f) / 0.66f);
+                        view.Root.localScale = Vector3.one * scale;
                     }
                     yield return null;
                 }
@@ -745,7 +764,55 @@ namespace MatchThree.Runtime
                 SetCellsVisible(hidden, true);
             }
 
+            if (step.CreatedSpecials.Count > 0)
+            {
+                yield return AnimateCreatedSpecials(step.CreatedSpecials);
+            }
+
             if (step.DidChange) yield return new WaitForSeconds(SettleDelaySeconds);
+        }
+
+        private IEnumerator AnimateCreatedSpecials(IEnumerable<(BoardPosition Position, SpecialType Type)> createdSpecials)
+        {
+            var targets = createdSpecials
+                .Select(s => s.Position)
+                .Distinct()
+                .Where(pos => _cells.TryGetValue(pos, out var cell) && cell.Icon.enabled)
+                .Select(pos => _cells[pos].Icon.rectTransform)
+                .ToList();
+
+            if (targets.Count == 0) yield break;
+
+            const float duration = 0.12f;
+            var elapsed = 0f;
+
+            foreach (var target in targets)
+            {
+                target.localScale = Vector3.one * 0.6f;
+            }
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                var t = Mathf.Clamp01(elapsed / duration);
+                var glow = Mathf.Sin(t * Mathf.PI) * 0.35f;
+
+                foreach (var target in targets)
+                {
+                    var image = target.GetComponent<Image>();
+                    target.localScale = Vector3.one * Mathf.LerpUnclamped(0.6f, 1f, t);
+                    image.color = new Color(1f, 1f, 1f, 1f - glow * 0.25f);
+                }
+
+                yield return null;
+            }
+
+            foreach (var target in targets)
+            {
+                var image = target.GetComponent<Image>();
+                target.localScale = Vector3.one;
+                image.color = Color.white;
+            }
         }
 
         private IEnumerator AnimateManyMoves(List<(RectTransform Rect, Vector2 From, Vector2 To, float Duration)> moves)
@@ -979,6 +1046,26 @@ namespace MatchThree.Runtime
             return localPoint;
         }
 
+        private Rect GetBoardRectOnAnimationLayer()
+        {
+            var gridRect = _grid.GetComponent<RectTransform>();
+            var corners = new Vector3[4];
+            gridRect.GetWorldCorners(corners);
+
+            var min = new Vector2(float.MaxValue, float.MaxValue);
+            var max = new Vector2(float.MinValue, float.MinValue);
+
+            for (var i = 0; i < corners.Length; i++)
+            {
+                var screen = RectTransformUtility.WorldToScreenPoint(null, corners[i]);
+                RectTransformUtility.ScreenPointToLocalPointInRectangle(_animationLayer, screen, null, out var local);
+                min = Vector2.Min(min, local);
+                max = Vector2.Max(max, local);
+            }
+
+            return Rect.MinMaxRect(min.x, min.y, max.x, max.y);
+        }
+
         private void ConfigureBoardLayout()
         {
             Canvas.ForceUpdateCanvases();
@@ -1062,12 +1149,16 @@ namespace MatchThree.Runtime
             public readonly RectTransform Root;
             public readonly Image Background;
             public readonly Image Icon;
+            public readonly Color BaseBackgroundColor;
+            public readonly Color BaseIconColor;
 
             public TransientTile(RectTransform root, Image background, Image icon)
             {
                 Root = root;
                 Background = background;
                 Icon = icon;
+                BaseBackgroundColor = background.color;
+                BaseIconColor = icon.color;
             }
         }
 

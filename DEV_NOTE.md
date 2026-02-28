@@ -28,11 +28,17 @@
 ## Animation timing and cascade readability
 - Input is blocked while animation coroutines are running.
 - Swap animation uses `0.10s`.
-- Clear animation uses a brief `0.08s` fade/scale pop.
+- Clear animation now uses `0.14s` and includes a more readable pop + flash (brief scale-up, then shrink while fading).
 - Falls/spawns animate per distance:
   - `duration = clamp(distance * 0.06s, 0.08s, 0.35s)`
-- Each resolve step adds a small `0.04s` settle delay, so longer cascades naturally take longer.
+- Each resolve step adds a `0.10s` settle delay so cascades read as distinct beats (clear -> fall -> next clear).
 - Core resolver now exposes per-step removed tile snapshots, movements, and spawn metadata to keep view animation data-driven and independent from gameplay logic.
+- Booster FX cues are now played on the transient animation layer (`MatchFxPlayer`):
+  - Rocket: fast line sweep on the affected row/column.
+  - Bomb: pulse burst at detonation cell.
+  - Lightning: subtle screen flash.
+- If a resolve step reports `CreatedSpecials`, the created booster tile scales in (`0.6 -> 1.0` over `0.12s`) with a brief glow pulse.
+- Tuning knobs live in `MatchThreeGameController` constants (`SwapDurationSeconds`, `ClearDurationSeconds`, `SettleDelaySeconds`, fall timing constants) and in `MatchFxPlayer` coroutine durations/colors.
 
 ## Match debugging helper
 - Press `M` in play mode to log current detected match groups and coordinates.
