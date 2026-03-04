@@ -24,7 +24,7 @@ namespace MatchThree.Runtime
         private const float BoardWidthUsage = 0.90f;
         private const float BoardHeightUsage = 0.96f;
 
-        [SerializeField, Range(0f, 8f)] private float iconInset = 0f;
+        [SerializeField, Range(0f, 10f)] private float iconInset = 0f;
 
         [SerializeField] private TextAsset levelAsset;
         [SerializeField] private TextAsset levelConfigAsset;
@@ -534,7 +534,7 @@ namespace MatchThree.Runtime
                     var iconGo = new GameObject("Icon");
                     iconGo.transform.SetParent(go.transform, false);
                     var icon = iconGo.AddComponent<Image>();
-                    ConfigureTileIconImage(icon);
+                    ConfigureTileIcon(icon);
 
                     var labelGo = new GameObject("Label");
                     labelGo.transform.SetParent(go.transform, false);
@@ -1156,7 +1156,7 @@ namespace MatchThree.Runtime
             rt.sizeDelta = new Vector2(gridWidth, gridHeight);
         }
 
-        private void ConfigureTileIconImage(Image icon)
+        private void ConfigureTileIcon(Image icon)
         {
             icon.useSpriteMesh = true;
             icon.preserveAspect = true;
@@ -1166,6 +1166,9 @@ namespace MatchThree.Runtime
             var rt = icon.rectTransform;
             rt.anchorMin = Vector2.zero;
             rt.anchorMax = Vector2.one;
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = Vector2.zero;
+            rt.sizeDelta = Vector2.zero;
             rt.offsetMin = new Vector2(iconInset, iconInset);
             rt.offsetMax = new Vector2(-iconInset, -iconInset);
         }
@@ -1185,7 +1188,7 @@ namespace MatchThree.Runtime
             iconGo.transform.SetParent(go.transform, false);
 
             var icon = iconGo.AddComponent<Image>();
-            ConfigureTileIconImage(icon);
+            ConfigureTileIcon(icon);
 
             var visual = ResolveVisual(tile);
             if (visual.Sprite != null)
