@@ -24,8 +24,7 @@ namespace MatchThree.Runtime
         private const float BoardWidthUsage = 0.90f;
         private const float BoardHeightUsage = 0.96f;
 
-        // Icon padding inside cell (0 = ìàêñèìàëüíî êðóïíî)
-        private const float IconInset = 0f;
+        [SerializeField, Range(0f, 8f)] private float iconInset = 0f;
 
         [SerializeField] private TextAsset levelAsset;
         [SerializeField] private TextAsset levelConfigAsset;
@@ -535,13 +534,7 @@ namespace MatchThree.Runtime
                     var iconGo = new GameObject("Icon");
                     iconGo.transform.SetParent(go.transform, false);
                     var icon = iconGo.AddComponent<Image>();
-                    icon.useSpriteMesh = true;
-
-                    var irt = icon.rectTransform;
-                    irt.anchorMin = Vector2.zero;
-                    irt.anchorMax = Vector2.one;
-                    irt.offsetMin = new Vector2(IconInset, IconInset);
-                    irt.offsetMax = new Vector2(-IconInset, -IconInset);
+                    ConfigureTileIconImage(icon);
 
                     var labelGo = new GameObject("Label");
                     labelGo.transform.SetParent(go.transform, false);
@@ -1163,6 +1156,20 @@ namespace MatchThree.Runtime
             rt.sizeDelta = new Vector2(gridWidth, gridHeight);
         }
 
+        private void ConfigureTileIconImage(Image icon)
+        {
+            icon.useSpriteMesh = true;
+            icon.preserveAspect = true;
+            icon.raycastTarget = false;
+            icon.type = Image.Type.Simple;
+
+            var rt = icon.rectTransform;
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = new Vector2(iconInset, iconInset);
+            rt.offsetMax = new Vector2(-iconInset, -iconInset);
+        }
+
         private TransientTile CreateTransientTile(TileEntitySnapshot tile, BoardPosition at)
         {
             var go = new GameObject("TransientTile");
@@ -1178,11 +1185,7 @@ namespace MatchThree.Runtime
             iconGo.transform.SetParent(go.transform, false);
 
             var icon = iconGo.AddComponent<Image>();
-            icon.useSpriteMesh = true;
-            icon.rectTransform.anchorMin = Vector2.zero;
-            icon.rectTransform.anchorMax = Vector2.one;
-            icon.rectTransform.offsetMin = new Vector2(IconInset, IconInset);
-            icon.rectTransform.offsetMax = new Vector2(-IconInset, -IconInset);
+            ConfigureTileIconImage(icon);
 
             var visual = ResolveVisual(tile);
             if (visual.Sprite != null)
