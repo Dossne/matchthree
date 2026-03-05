@@ -19,6 +19,8 @@ namespace MatchThree.Runtime
         private const float SettleDelaySeconds = 0.14f;
         private const int MaxGoalFlyersPerStep = 8;
         private const int MaxGoalFlyersPerTargetPerStep = 6;
+        private const int ClearParticlePoolSize = 16;
+        private const int MaxClearParticlesPerStep = 12;
 
         // UI layout tuning (portrait)
         private const float HudHeight = 220f;
@@ -27,6 +29,13 @@ namespace MatchThree.Runtime
         private const float BoardHeightUsage = 0.96f;
 
         [SerializeField, Range(-12f, 10f)] private float iconInset = -6f;
+
+        [Header("Clear Particles")]
+        [SerializeField] private bool enableClearParticles = true;
+        [SerializeField, Range(4, 40)] private int clearParticleCount = 16;
+        [SerializeField, Range(0.15f, 0.6f)] private float clearParticleLifetime = 0.35f;
+        [SerializeField, Range(0.1f, 3f)] private float clearParticleSpeed = 0.75f;
+        [SerializeField, Range(0.05f, 1f)] private float clearParticleScale = 0.22f;
 
         [Header("Board Background")]
         [SerializeField] private Sprite boardGridSprite;
@@ -70,6 +79,11 @@ namespace MatchThree.Runtime
         private bool _isAnimating;
         private bool _isInputBlocked;
 
+        private Camera _uiCamera;
+        private Transform _clearParticleRoot;
+        private readonly Queue<PooledClearParticle> _clearParticlePool = new();
+        private readonly List<PooledClearParticle> _activeClearParticles = new();
+
         private sealed class CellView
         {
             public RectTransform Root;
@@ -78,6 +92,12 @@ namespace MatchThree.Runtime
             public Image Icon;
             public Text Label;
             public CanvasGroup Group;
+        }
+
+        private sealed class PooledClearParticle
+        {
+            public GameObject Root;
+            public ParticleSystem System;
         }
 
         private readonly struct RuntimeLevelData
@@ -125,6 +145,7 @@ namespace MatchThree.Runtime
 
         private void Update()
         {
+            TickClearParticlePool();
             RefreshHudIfDirty();
 
             if (_resolver == null || _isAnimating) return;
@@ -167,6 +188,8 @@ namespace MatchThree.Runtime
             scaler.referenceResolution = new Vector2(1080f, 1920f);
             scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
             scaler.matchWidthOrHeight = 0.5f;
+
+            _uiCamera = canvas.renderMode == RenderMode.ScreenSpaceOverlay ? Camera.main : canvas.worldCamera;
 
             var rootGo = FindOrCreateUiObject(canvas.transform, "Root");
             _uiRoot = EnsureComponent<RectTransform>(rootGo);
@@ -260,6 +283,7 @@ namespace MatchThree.Runtime
             _animationLayer.offsetMax = Vector2.zero;
 
             _fxPlayer = new MatchFxPlayer(this, _animationLayer, GetBoardRectOnAnimationLayer, CellPosition, () => _grid.cellSize);
+            EnsureClearParticlePool();
 
             // Overlays
             _winPanel = BuildOverlayPanel(canvas.transform, "WinPanel", "You Win!", "Next", LoadNextLevel);
@@ -714,6 +738,8 @@ namespace MatchThree.Runtime
                 {
                     removedViews.Add(CreateTransientTile(removed.Tile, removed.Position));
                 }
+
+                SpawnClearParticles(removedViews);
 
                 var elapsed = 0f;
                 const float popPhase = 0.28f;
@@ -1424,6 +1450,169 @@ namespace MatchThree.Runtime
         {
             color.a = alpha;
             return color;
+        }
+
+        private void EnsureClearParticlePool()
+        {
+            if (_clearParticleRoot != null)
+            {
+                return;
+            }
+
+            var rootGo = new GameObject("ClearParticlePool");
+            _clearParticleRoot = rootGo.transform;
+
+            for (var i = 0; i < ClearParticlePoolSize; i++)
+            {
+                _clearParticlePool.Enqueue(CreateClearParticleSystem(i));
+            }
+        }
+
+        private PooledClearParticle CreateClearParticleSystem(int index)
+        {
+            var go = new GameObject($"ClearParticle_{index}");
+            go.transform.SetParent(_clearParticleRoot, false);
+            go.SetActive(false);
+
+            var ps = go.AddComponent<ParticleSystem>();
+            ConfigureClearParticleSystem(ps);
+
+            var renderer = ps.GetComponent<ParticleSystemRenderer>();
+            renderer.sortingOrder = 30;
+
+            return new PooledClearParticle
+            {
+                Root = go,
+                System = ps
+            };
+        }
+
+        private void ConfigureClearParticleSystem(ParticleSystem ps)
+        {
+            var main = ps.main;
+            main.loop = false;
+            main.playOnAwake = false;
+            main.duration = clearParticleLifetime;
+            main.startLifetime = clearParticleLifetime;
+            main.startSpeed = clearParticleSpeed;
+            main.startSize = clearParticleScale;
+            main.maxParticles = Mathf.Max(8, clearParticleCount + 8);
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            main.stopAction = ParticleSystemStopAction.None;
+            main.startColor = new ParticleSystem.MinMaxGradient(
+                new Color(1f, 1f, 1f, 0.92f),
+                new Color(0.75f, 0.75f, 0.75f, 0.78f));
+
+            var emission = ps.emission;
+            emission.enabled = true;
+            emission.rateOverTime = 0f;
+            emission.SetBursts(new[] { new ParticleSystem.Burst(0f, (short)Mathf.Clamp(clearParticleCount, 1, 200)) });
+
+            var shape = ps.shape;
+            shape.enabled = true;
+            shape.shapeType = ParticleSystemShapeType.Circle;
+            shape.radius = clearParticleScale * 0.45f;
+
+            var colorOverLifetime = ps.colorOverLifetime;
+            colorOverLifetime.enabled = true;
+            var colorGradient = new Gradient();
+            colorGradient.SetKeys(
+                new[]
+                {
+                    new GradientColorKey(Color.white, 0f),
+                    new GradientColorKey(new Color(0.82f, 0.82f, 0.82f), 1f)
+                },
+                new[]
+                {
+                    new GradientAlphaKey(0.95f, 0f),
+                    new GradientAlphaKey(0.6f, 0.45f),
+                    new GradientAlphaKey(0f, 1f)
+                });
+            colorOverLifetime.color = colorGradient;
+
+            var sizeOverLifetime = ps.sizeOverLifetime;
+            sizeOverLifetime.enabled = true;
+            sizeOverLifetime.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.EaseInOut(0f, 0.65f, 1f, 1.2f));
+
+            var velocityOverLifetime = ps.velocityOverLifetime;
+            velocityOverLifetime.enabled = true;
+            velocityOverLifetime.space = ParticleSystemSimulationSpace.Local;
+            velocityOverLifetime.orbitalZ = 0f;
+
+            var renderer = ps.GetComponent<ParticleSystemRenderer>();
+            renderer.renderMode = ParticleSystemRenderMode.Billboard;
+        }
+
+        private void SpawnClearParticles(List<TransientTile> removedViews)
+        {
+            if (!enableClearParticles || removedViews == null || removedViews.Count == 0)
+            {
+                return;
+            }
+
+            EnsureClearParticlePool();
+            var maxCount = Mathf.Min(MaxClearParticlesPerStep, removedViews.Count);
+            for (var i = 0; i < maxCount; i++)
+            {
+                if (_clearParticlePool.Count == 0)
+                {
+                    break;
+                }
+
+                var world = TryGetParticleWorldPosition(removedViews[i].Root.position, out var particleWorldPos)
+                    ? particleWorldPos
+                    : (Vector3?)null;
+                if (!world.HasValue)
+                {
+                    continue;
+                }
+
+                var pooled = _clearParticlePool.Dequeue();
+                pooled.Root.SetActive(true);
+                pooled.Root.transform.position = world.Value;
+                ConfigureClearParticleSystem(pooled.System);
+                pooled.System.Clear(true);
+                pooled.System.Play(true);
+                _activeClearParticles.Add(pooled);
+            }
+        }
+
+        private bool TryGetParticleWorldPosition(Vector3 sourceWorldUiPosition, out Vector3 worldPosition)
+        {
+            worldPosition = default;
+
+            var screenPoint = RectTransformUtility.WorldToScreenPoint(null, sourceWorldUiPosition);
+            var cameraForConversion = _uiCamera != null ? _uiCamera : Camera.main;
+            if (cameraForConversion == null)
+            {
+                return false;
+            }
+
+            var distance = Mathf.Max(0.3f, cameraForConversion.nearClipPlane + 0.6f);
+            worldPosition = cameraForConversion.ScreenToWorldPoint(new Vector3(screenPoint.x, screenPoint.y, distance));
+            return true;
+        }
+
+        private void TickClearParticlePool()
+        {
+            if (_activeClearParticles.Count == 0)
+            {
+                return;
+            }
+
+            for (var i = _activeClearParticles.Count - 1; i >= 0; i--)
+            {
+                var particle = _activeClearParticles[i];
+                if (particle.System != null && particle.System.IsAlive(true))
+                {
+                    continue;
+                }
+
+                particle.System?.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                particle.Root?.SetActive(false);
+                _activeClearParticles.RemoveAt(i);
+                _clearParticlePool.Enqueue(particle);
+            }
         }
 
         private static Color ColorFor(int id) => id switch
