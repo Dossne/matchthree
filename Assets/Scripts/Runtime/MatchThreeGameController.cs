@@ -17,6 +17,8 @@ namespace MatchThree.Runtime
         private const float MinFallDurationSeconds = 0.10f;
         private const float MaxFallDurationSeconds = 0.48f;
         private const float SettleDelaySeconds = 0.14f;
+        private const int MaxGoalFlyersPerStep = 8;
+        private const int MaxGoalFlyersPerTargetPerStep = 6;
 
         // UI layout tuning (portrait)
         private const float HudHeight = 220f;
@@ -641,6 +643,8 @@ namespace MatchThree.Runtime
             {
                 var step = result.Steps[i];
                 yield return AnimateResolveStep(step);
+                _goalTracker.ApplyStepSummary(step.Summary);
+                RefreshHud();
 
                 var hasNextStep = i < result.Steps.Count - 1;
                 if (step.DidChange && hasNextStep)
@@ -650,7 +654,6 @@ namespace MatchThree.Runtime
             }
 
             _moveCounter.ConsumeIfAccepted(result);
-            _goalTracker.ApplyMoveResult(result);
             RefreshHud();
             UpdateStatusAfterEvaluation();
 
@@ -739,6 +742,11 @@ namespace MatchThree.Runtime
                     yield return null;
                 }
 
+                if (_goalHudView != null && _goalTracker != null)
+                {
+                    yield return AnimateGoalFlyers(step, removedViews);
+                }
+
                 foreach (var view in removedViews) Destroy(view.Root.gameObject);
                 SetCellsVisible(hidden, true);
             }
@@ -796,6 +804,137 @@ namespace MatchThree.Runtime
                 yield return AnimateCreatedSpecials(step.CreatedSpecials);
             }
 
+        }
+
+        private IEnumerator AnimateGoalFlyers(ResolveStep step, List<TransientTile> removedViews)
+        {
+            if (step.RemovedTiles.Count == 0 || removedViews.Count == 0)
+            {
+                yield break;
+            }
+
+            var flyers = new List<(TransientTile View, Vector2 From, Vector2 To, float Duration, float Delay)>();
+            var perGoalCounts = new Dictionary<int, int>();
+
+            for (var i = 0; i < step.RemovedTiles.Count && flyers.Count < MaxGoalFlyersPerStep; i++)
+            {
+                var removed = step.RemovedTiles[i];
+                if (removed.Tile.Kind != TileKind.Piece)
+                {
+                    continue;
+                }
+
+                var colorId = removed.Tile.ColorId;
+                if (!HasActiveCollectColorGoal(colorId))
+                {
+                    continue;
+                }
+
+                var existingCount = perGoalCounts.TryGetValue(colorId, out var countForGoal) ? countForGoal : 0;
+                if (existingCount >= MaxGoalFlyersPerTargetPerStep)
+                {
+                    continue;
+                }
+
+                if (!_goalHudView.TryGetGoalTargetRect(GoalType.CollectColor, colorId, out var targetRect) || targetRect == null)
+                {
+                    continue;
+                }
+
+                var view = removedViews[i];
+                var from = view.Root.anchoredPosition;
+                var to = GetRectCenterOnAnimationLayer(targetRect);
+                var delay = flyers.Count * 0.03f;
+                var duration = 0.32f + Mathf.Min(0.12f, Vector2.Distance(from, to) * 0.0002f);
+
+                flyers.Add((view, from, to, duration, delay));
+                perGoalCounts[colorId] = existingCount + 1;
+            }
+
+            if (flyers.Count == 0)
+            {
+                yield break;
+            }
+
+            var elapsed = 0f;
+            var maxDuration = flyers.Max(f => f.Delay + f.Duration);
+
+            while (elapsed < maxDuration)
+            {
+                elapsed += Time.deltaTime;
+
+                foreach (var flyer in flyers)
+                {
+                    var localTime = Mathf.Clamp01((elapsed - flyer.Delay) / flyer.Duration);
+                    if (localTime <= 0f)
+                    {
+                        continue;
+                    }
+
+                    var eased = 1f - Mathf.Pow(1f - localTime, 2f);
+                    flyer.View.Root.anchoredPosition = Vector2.LerpUnclamped(flyer.From, flyer.To, eased);
+
+                    var scale = Mathf.LerpUnclamped(1f, 0.3f, localTime);
+                    flyer.View.Root.localScale = Vector3.one * scale;
+
+                    var alpha = 1f - localTime;
+                    flyer.View.Background.color = SetAlpha(flyer.View.BaseBackgroundColor, alpha);
+                    flyer.View.Icon.color = SetAlpha(flyer.View.BaseIconColor, alpha);
+                }
+
+                yield return null;
+            }
+
+            foreach (var flyer in flyers)
+            {
+                flyer.View.Root.anchoredPosition = flyer.To;
+                flyer.View.Root.localScale = Vector3.one * 0.3f;
+                flyer.View.Background.color = SetAlpha(flyer.View.BaseBackgroundColor, 0f);
+                flyer.View.Icon.color = SetAlpha(flyer.View.BaseIconColor, 0f);
+            }
+
+            foreach (var colorId in perGoalCounts.Keys)
+            {
+                if (_goalHudView.TryGetGoalTargetRect(GoalType.CollectColor, colorId, out var targetRect) && targetRect != null)
+                {
+                    StartCoroutine(AnimateGoalTargetPunch(targetRect));
+                }
+            }
+        }
+
+        private bool HasActiveCollectColorGoal(int colorId)
+        {
+            if (_goalTracker == null)
+            {
+                return false;
+            }
+
+            return _goalTracker.GetProgress()
+                .OfType<CollectColorProgress>()
+                .Any(goal => goal.ColorId == colorId && goal.Current < goal.Target);
+        }
+
+        private IEnumerator AnimateGoalTargetPunch(RectTransform target)
+        {
+            if (target == null)
+            {
+                yield break;
+            }
+
+            const float duration = 0.16f;
+            var elapsed = 0f;
+            var baseScale = target.localScale;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                var t = Mathf.Clamp01(elapsed / duration);
+                var bump = 1f + Mathf.Sin(t * Mathf.PI) * 0.18f;
+                target.localScale = baseScale * bump;
+                yield return null;
+            }
+
+            target.localScale = baseScale;
         }
 
         private IEnumerator AnimateCreatedSpecials(IEnumerable<(BoardPosition Position, SpecialType Type)> createdSpecials)
@@ -1148,6 +1287,16 @@ namespace MatchThree.Runtime
             }
 
             return Rect.MinMaxRect(min.x, min.y, max.x, max.y);
+        }
+
+        private Vector2 GetRectCenterOnAnimationLayer(RectTransform target)
+        {
+            var corners = new Vector3[4];
+            target.GetWorldCorners(corners);
+            var worldCenter = (corners[0] + corners[2]) * 0.5f;
+            var screen = RectTransformUtility.WorldToScreenPoint(null, worldCenter);
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(_animationLayer, screen, null, out var localPoint);
+            return localPoint;
         }
 
         private void ConfigureBoardLayout()
