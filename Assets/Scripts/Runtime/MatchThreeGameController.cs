@@ -24,6 +24,7 @@ namespace MatchThree.Runtime
         private const float BoardWidthUsage = 0.90f;
         private const float BoardHeightUsage = 0.96f;
 
+        // Negative inset creates an outset, allowing icons to render larger/denser.
         [SerializeField, Range(-12f, 10f)] private float iconInset = -6f;
 
         [SerializeField] private TextAsset levelAsset;
