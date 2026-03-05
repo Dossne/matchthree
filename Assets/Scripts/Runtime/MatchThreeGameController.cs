@@ -24,7 +24,7 @@ namespace MatchThree.Runtime
         private const float BoardWidthUsage = 0.90f;
         private const float BoardHeightUsage = 0.96f;
 
-        [SerializeField, Range(0f, 10f)] private float iconInset = 0f;
+        [SerializeField, Range(-32f, 32f)] private float iconPadding = -8f;
 
         [SerializeField] private TextAsset levelAsset;
         [SerializeField] private TextAsset levelConfigAsset;
@@ -1169,8 +1169,8 @@ namespace MatchThree.Runtime
             rt.pivot = new Vector2(0.5f, 0.5f);
             rt.anchoredPosition = Vector2.zero;
             rt.sizeDelta = Vector2.zero;
-            rt.offsetMin = new Vector2(iconInset, iconInset);
-            rt.offsetMax = new Vector2(-iconInset, -iconInset);
+            rt.offsetMin = new Vector2(iconPadding, iconPadding);
+            rt.offsetMax = new Vector2(-iconPadding, -iconPadding);
         }
 
         private TransientTile CreateTransientTile(TileEntitySnapshot tile, BoardPosition at)
