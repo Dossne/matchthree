@@ -27,7 +27,7 @@ namespace MatchThree.Runtime
         [SerializeField, Range(-12f, 10f)] private float iconInset = -6f;
 
         [Header("Board Background")]
-        [SerializeField] private Sprite boardBackgroundSprite;
+        [SerializeField] private Sprite boardGridSprite;
 
         [SerializeField] private TextAsset levelAsset;
         [SerializeField] private TextAsset levelConfigAsset;
@@ -43,6 +43,7 @@ namespace MatchThree.Runtime
         private RectTransform _boardContainer;
 
         private GridLayoutGroup _grid;
+        private Image _boardGridBackgroundImage;
         private RectTransform _animationLayer;
 
         private Text _status;
@@ -187,28 +188,6 @@ namespace MatchThree.Runtime
             _boardContainer.offsetMin = new Vector2(0f, BottomPadding);
             _boardContainer.offsetMax = new Vector2(0f, -HudHeight);
 
-            var boardBackgroundGo = FindOrCreateUiObject(_boardContainer, "BoardBackground");
-            boardBackgroundGo.transform.SetParent(_boardContainer, false);
-            boardBackgroundGo.transform.SetAsFirstSibling();
-
-            var boardBackgroundRect = EnsureComponent<RectTransform>(boardBackgroundGo);
-            boardBackgroundRect.anchorMin = Vector2.zero;
-            boardBackgroundRect.anchorMax = Vector2.one;
-            boardBackgroundRect.offsetMin = Vector2.zero;
-            boardBackgroundRect.offsetMax = Vector2.zero;
-            boardBackgroundRect.anchoredPosition = Vector2.zero;
-            boardBackgroundRect.sizeDelta = Vector2.zero;
-
-            var boardBackgroundImage = EnsureComponent<Image>(boardBackgroundGo);
-            if (boardBackgroundSprite != null)
-            {
-                boardBackgroundImage.sprite = boardBackgroundSprite;
-            }
-
-            boardBackgroundImage.type = Image.Type.Simple;
-            boardBackgroundImage.preserveAspect = false;
-            boardBackgroundImage.raycastTarget = false;
-
             // Status
             var statusGo = FindOrCreateUiObject(_hud, "Status");
             _status = EnsureComponent<Text>(statusGo);
@@ -254,6 +233,21 @@ namespace MatchThree.Runtime
             gridRt.anchorMin = new Vector2(0.5f, 0.5f);
             gridRt.anchorMax = new Vector2(0.5f, 0.5f);
             gridRt.pivot = new Vector2(0.5f, 0.5f);
+
+            var boardGridBackgroundGo = FindOrCreateUiObject(_boardContainer, "BoardGridBackground");
+            boardGridBackgroundGo.transform.SetParent(_boardContainer, false);
+            _boardGridBackgroundImage = EnsureComponent<Image>(boardGridBackgroundGo);
+            if (boardGridSprite != null)
+            {
+                _boardGridBackgroundImage.sprite = boardGridSprite;
+            }
+
+            _boardGridBackgroundImage.type = Image.Type.Simple;
+            _boardGridBackgroundImage.preserveAspect = false;
+            _boardGridBackgroundImage.raycastTarget = false;
+            _boardGridBackgroundImage.rectTransform.localScale = Vector3.one;
+            _boardGridBackgroundImage.rectTransform.localRotation = Quaternion.identity;
+            _boardGridBackgroundImage.rectTransform.SetAsFirstSibling();
 
             // Animation layer
             var animationGo = FindOrCreateUiObject(canvas.transform, "AnimationLayer");
@@ -1177,8 +1171,20 @@ namespace MatchThree.Runtime
             var gridWidth = cellSize * cols + spacingX * (cols - 1);
             var gridHeight = cellSize * rows + spacingY * (rows - 1);
 
-            var rt = _grid.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(gridWidth, gridHeight);
+            var gridRt = _grid.GetComponent<RectTransform>();
+            gridRt.sizeDelta = new Vector2(gridWidth, gridHeight);
+
+            if (_boardGridBackgroundImage != null)
+            {
+                var bgRt = _boardGridBackgroundImage.rectTransform;
+                bgRt.anchorMin = gridRt.anchorMin;
+                bgRt.anchorMax = gridRt.anchorMax;
+                bgRt.pivot = gridRt.pivot;
+                bgRt.anchoredPosition = gridRt.anchoredPosition;
+                bgRt.sizeDelta = gridRt.sizeDelta;
+                bgRt.localScale = Vector3.one;
+                bgRt.localRotation = Quaternion.identity;
+            }
         }
 
         private void ConfigureTileIcon(Image icon)
