@@ -14,6 +14,7 @@ namespace MatchThree.Runtime
         private readonly Font _font;
 
         private readonly List<GoalHudItemView> _goalItems = new();
+        private readonly Dictionary<(GoalType Type, int Id), RectTransform> _goalTargetRects = new();
 
         public GoalHudView(RectTransform goalsPanel, RectTransform movesPanel, Font font)
         {
@@ -63,6 +64,8 @@ namespace MatchThree.Runtime
 
         public void UpdateGoals(GoalTracker goalTracker, TileSpriteLibrary spriteLibrary)
         {
+            _goalTargetRects.Clear();
+
             if (goalTracker == null)
             {
                 SetGoalItemCount(0);
@@ -77,7 +80,13 @@ namespace MatchThree.Runtime
                 var progress = progressList[i];
                 var item = _goalItems[i];
                 UpdateGoalItem(item, progress, spriteLibrary);
+                CacheGoalTargetRect(progress, item);
             }
+        }
+
+        public bool TryGetGoalTargetRect(GoalType goalType, int id, out RectTransform rect)
+        {
+            return _goalTargetRects.TryGetValue((goalType, id), out rect);
         }
 
         public void UpdateMoves(MoveCounter moveCounter)
@@ -127,6 +136,39 @@ namespace MatchThree.Runtime
             }
 
             item.SetContent(sprite, fallbackLabel, remaining);
+        }
+
+        private void CacheGoalTargetRect(GoalProgress progress, GoalHudItemView item)
+        {
+            if (!TryGetGoalKey(progress, out var key))
+            {
+                return;
+            }
+
+            var targetRect = item.Icon != null && item.Icon.enabled
+                ? item.Icon.rectTransform
+                : item.IconBackground?.rectTransform;
+
+            if (targetRect != null)
+            {
+                _goalTargetRects[key] = targetRect;
+            }
+        }
+
+        private static bool TryGetGoalKey(GoalProgress progress, out (GoalType Type, int Id) key)
+        {
+            switch (progress)
+            {
+                case CollectColorProgress collect:
+                    key = (GoalType.CollectColor, collect.ColorId);
+                    return true;
+                case ClearAllRocksProgress:
+                    key = (GoalType.ClearAllRocks, 0);
+                    return true;
+                default:
+                    key = default;
+                    return false;
+            }
         }
 
         private Text EnsureText(GameObject go, string defaultValue, int fontSize, TextAnchor alignment)
