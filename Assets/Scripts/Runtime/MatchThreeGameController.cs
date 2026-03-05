@@ -26,6 +26,9 @@ namespace MatchThree.Runtime
 
         [SerializeField, Range(-12f, 10f)] private float iconInset = -6f;
 
+        [Header("Board Background")]
+        [SerializeField] private Sprite boardBackgroundSprite;
+
         [SerializeField] private TextAsset levelAsset;
         [SerializeField] private TextAsset levelConfigAsset;
         [SerializeField] private LevelRegistry levelRegistry = new();
@@ -183,6 +186,28 @@ namespace MatchThree.Runtime
             _boardContainer.anchorMax = new Vector2(1f, 1f);
             _boardContainer.offsetMin = new Vector2(0f, BottomPadding);
             _boardContainer.offsetMax = new Vector2(0f, -HudHeight);
+
+            var boardBackgroundGo = FindOrCreateUiObject(_boardContainer, "BoardBackground");
+            boardBackgroundGo.transform.SetParent(_boardContainer, false);
+            boardBackgroundGo.transform.SetAsFirstSibling();
+
+            var boardBackgroundRect = EnsureComponent<RectTransform>(boardBackgroundGo);
+            boardBackgroundRect.anchorMin = Vector2.zero;
+            boardBackgroundRect.anchorMax = Vector2.one;
+            boardBackgroundRect.offsetMin = Vector2.zero;
+            boardBackgroundRect.offsetMax = Vector2.zero;
+            boardBackgroundRect.anchoredPosition = Vector2.zero;
+            boardBackgroundRect.sizeDelta = Vector2.zero;
+
+            var boardBackgroundImage = EnsureComponent<Image>(boardBackgroundGo);
+            if (boardBackgroundSprite != null)
+            {
+                boardBackgroundImage.sprite = boardBackgroundSprite;
+            }
+
+            boardBackgroundImage.type = Image.Type.Simple;
+            boardBackgroundImage.preserveAspect = false;
+            boardBackgroundImage.raycastTarget = false;
 
             // Status
             var statusGo = FindOrCreateUiObject(_hud, "Status");
