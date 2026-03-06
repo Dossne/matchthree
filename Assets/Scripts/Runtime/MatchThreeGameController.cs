@@ -31,6 +31,7 @@ namespace MatchThree.Runtime
         [SerializeField, Range(-12f, 10f)] private float iconInset = -6f;
 
         [Header("Clear Particles")]
+        [SerializeField] private Material clearParticleMaterial;
         [SerializeField] private bool enableClearParticles = true;
         [SerializeField, Range(4, 40)] private int clearParticleCount = 16;
         [SerializeField, Range(0.15f, 0.6f)] private float clearParticleLifetime = 0.35f;
@@ -1479,6 +1480,10 @@ namespace MatchThree.Runtime
 
             var renderer = ps.GetComponent<ParticleSystemRenderer>();
             renderer.sortingOrder = 30;
+            if (clearParticleMaterial != null)
+            {
+                renderer.sharedMaterial = clearParticleMaterial;
+            }
 
             return new PooledClearParticle
             {
