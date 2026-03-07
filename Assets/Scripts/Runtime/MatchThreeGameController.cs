@@ -20,6 +20,7 @@ namespace MatchThree.Runtime
         private const int MaxGoalFlyersPerStep = 8;
         private const int MaxGoalFlyersPerTargetPerStep = 6;
         private const int ClearParticlePoolSize = 16;
+        private const int ClearUiShardPoolSize = 64;
         private const int MaxClearParticlesPerStep = 12;
 
         // UI layout tuning (portrait)
@@ -37,6 +38,10 @@ namespace MatchThree.Runtime
         [SerializeField, Range(0.15f, 0.6f)] private float clearParticleLifetime = 0.35f;
         [SerializeField, Range(0.1f, 3f)] private float clearParticleSpeed = 0.75f;
         [SerializeField, Range(0.05f, 1f)] private float clearParticleScale = 0.22f;
+
+        [Header("Clear Shards (UI)")]
+        [SerializeField] private Sprite[] clearShardSprites;
+        [SerializeField] private bool useUiShards = true;
 
         [Header("Board Background")]
         [SerializeField] private Sprite boardGridSprite;
@@ -84,6 +89,9 @@ namespace MatchThree.Runtime
         private Transform _clearParticleRoot;
         private readonly Queue<PooledClearParticle> _clearParticlePool = new();
         private readonly List<PooledClearParticle> _activeClearParticles = new();
+        private readonly Queue<PooledUiShard> _clearUiShardPool = new();
+        private readonly List<ActiveUiShard> _activeUiShards = new();
+        private Sprite _defaultUiShardSprite;
 
         private sealed class CellView
         {
@@ -99,6 +107,25 @@ namespace MatchThree.Runtime
         {
             public GameObject Root;
             public ParticleSystem System;
+        }
+
+        private sealed class PooledUiShard
+        {
+            public RectTransform Root;
+            public Image Image;
+            public CanvasGroup Group;
+        }
+
+        private struct ActiveUiShard
+        {
+            public PooledUiShard Shard;
+            public Vector2 Start;
+            public Vector2 End;
+            public float Duration;
+            public float Elapsed;
+            public float StartRotation;
+            public float RotationSpeed;
+            public float BaseSize;
         }
 
         private readonly struct RuntimeLevelData
@@ -147,6 +174,7 @@ namespace MatchThree.Runtime
         private void Update()
         {
             TickClearParticlePool();
+            TickClearUiShardPool();
             RefreshHudIfDirty();
 
             if (_resolver == null || _isAnimating) return;
@@ -285,6 +313,7 @@ namespace MatchThree.Runtime
 
             _fxPlayer = new MatchFxPlayer(this, _animationLayer, GetBoardRectOnAnimationLayer, CellPosition, () => _grid.cellSize);
             EnsureClearParticlePool();
+            EnsureClearUiShardPool();
 
             // Overlays
             _winPanel = BuildOverlayPanel(canvas.transform, "WinPanel", "You Win!", "Next", LoadNextLevel);
@@ -740,7 +769,14 @@ namespace MatchThree.Runtime
                     removedViews.Add(CreateTransientTile(removed.Tile, removed.Position));
                 }
 
-                SpawnClearParticles(removedViews);
+                if (useUiShards)
+                {
+                    SpawnClearUiShards(removedViews);
+                }
+                else
+                {
+                    SpawnClearParticles(removedViews);
+                }
 
                 var elapsed = 0f;
                 const float popPhase = 0.28f;
@@ -1469,6 +1505,49 @@ namespace MatchThree.Runtime
             }
         }
 
+        private void EnsureClearUiShardPool()
+        {
+            if (_animationLayer == null || _clearUiShardPool.Count + _activeUiShards.Count > 0)
+            {
+                return;
+            }
+
+            if (_defaultUiShardSprite == null)
+            {
+                _defaultUiShardSprite = Resources.GetBuiltinResource<Sprite>("UI/Skin/UISprite.psd");
+            }
+
+            for (var i = 0; i < ClearUiShardPoolSize; i++)
+            {
+                _clearUiShardPool.Enqueue(CreateClearUiShard(i));
+            }
+        }
+
+        private PooledUiShard CreateClearUiShard(int index)
+        {
+            var go = new GameObject($"ClearUiShard_{index}");
+            var rect = go.AddComponent<RectTransform>();
+            rect.SetParent(_animationLayer, false);
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+
+            var image = go.AddComponent<Image>();
+            image.raycastTarget = false;
+
+            var group = go.AddComponent<CanvasGroup>();
+            group.alpha = 0f;
+
+            go.SetActive(false);
+
+            return new PooledUiShard
+            {
+                Root = rect,
+                Image = image,
+                Group = group
+            };
+        }
+
         private PooledClearParticle CreateClearParticleSystem(int index)
         {
             var go = new GameObject($"ClearParticle_{index}");
@@ -1582,6 +1661,69 @@ namespace MatchThree.Runtime
             }
         }
 
+        private void SpawnClearUiShards(List<TransientTile> removedViews)
+        {
+            if (!enableClearParticles || removedViews == null || removedViews.Count == 0)
+            {
+                return;
+            }
+
+            EnsureClearUiShardPool();
+            if (_clearUiShardPool.Count == 0)
+            {
+                return;
+            }
+
+            var maxTiles = Mathf.Min(MaxClearParticlesPerStep, removedViews.Count);
+            var hasCustomSprites = clearShardSprites != null && clearShardSprites.Length > 0;
+            var cellSize = Mathf.Min(_grid.cellSize.x, _grid.cellSize.y);
+
+            for (var i = 0; i < maxTiles; i++)
+            {
+                var origin = removedViews[i].Root.anchoredPosition;
+                var shardsPerTile = Random.Range(3, 7);
+                for (var shardIndex = 0; shardIndex < shardsPerTile; shardIndex++)
+                {
+                    if (_clearUiShardPool.Count == 0)
+                    {
+                        return;
+                    }
+
+                    var dir = Random.insideUnitCircle;
+                    if (dir.sqrMagnitude < 0.001f)
+                    {
+                        dir = Vector2.up;
+                    }
+
+                    var shard = _clearUiShardPool.Dequeue();
+                    var travelDistance = clearParticleSpeed * Random.Range(40f, 80f);
+                    var baseSize = clearParticleScale * cellSize * Random.Range(0.25f, 0.45f);
+
+                    shard.Root.anchoredPosition = origin;
+                    shard.Root.sizeDelta = Vector2.one * baseSize;
+                    shard.Root.localScale = Vector3.one;
+                    shard.Root.localEulerAngles = new Vector3(0f, 0f, Random.Range(0f, 360f));
+                    shard.Group.alpha = 1f;
+                    shard.Image.sprite = hasCustomSprites ? clearShardSprites[Random.Range(0, clearShardSprites.Length)] : _defaultUiShardSprite;
+                    shard.Image.color = Color.white;
+                    shard.Image.enabled = true;
+                    shard.Root.gameObject.SetActive(true);
+
+                    _activeUiShards.Add(new ActiveUiShard
+                    {
+                        Shard = shard,
+                        Start = origin,
+                        End = origin + dir.normalized * travelDistance,
+                        Duration = clearParticleLifetime,
+                        Elapsed = 0f,
+                        StartRotation = shard.Root.localEulerAngles.z,
+                        RotationSpeed = Random.Range(-360f, 360f),
+                        BaseSize = baseSize
+                    });
+                }
+            }
+        }
+
         private bool TryGetParticleWorldPosition(Vector3 sourceWorldUiPosition, out Vector3 worldPosition)
         {
             worldPosition = default;
@@ -1617,6 +1759,40 @@ namespace MatchThree.Runtime
                 particle.Root?.SetActive(false);
                 _activeClearParticles.RemoveAt(i);
                 _clearParticlePool.Enqueue(particle);
+            }
+        }
+
+        private void TickClearUiShardPool()
+        {
+            if (_activeUiShards.Count == 0)
+            {
+                return;
+            }
+
+            for (var i = _activeUiShards.Count - 1; i >= 0; i--)
+            {
+                var active = _activeUiShards[i];
+                active.Elapsed += Time.deltaTime;
+                var t = Mathf.Clamp01(active.Elapsed / Mathf.Max(0.01f, active.Duration));
+                var eased = 1f - Mathf.Pow(1f - t, 2f);
+
+                active.Shard.Root.anchoredPosition = Vector2.LerpUnclamped(active.Start, active.End, eased);
+                active.Shard.Root.localEulerAngles = new Vector3(0f, 0f, active.StartRotation + (active.RotationSpeed * t));
+
+                var scale = Mathf.LerpUnclamped(1f, 0.6f, t);
+                active.Shard.Root.sizeDelta = Vector2.one * (active.BaseSize * scale);
+                active.Shard.Group.alpha = 1f - t;
+
+                if (t >= 1f)
+                {
+                    active.Shard.Group.alpha = 0f;
+                    active.Shard.Root.gameObject.SetActive(false);
+                    _clearUiShardPool.Enqueue(active.Shard);
+                    _activeUiShards.RemoveAt(i);
+                    continue;
+                }
+
+                _activeUiShards[i] = active;
             }
         }
 
