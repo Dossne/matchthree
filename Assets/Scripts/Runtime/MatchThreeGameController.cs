@@ -113,6 +113,7 @@ namespace MatchThree.Runtime
         {
             public RectTransform Root;
             public Image Image;
+            public RawImage RawImage;
             public CanvasGroup Group;
         }
 
@@ -1532,8 +1533,29 @@ namespace MatchThree.Runtime
             rect.anchorMax = new Vector2(0.5f, 0.5f);
             rect.pivot = new Vector2(0.5f, 0.5f);
 
-            var image = go.AddComponent<Image>();
+            var imageGo = new GameObject("Image");
+            imageGo.transform.SetParent(go.transform, false);
+            var imageRect = imageGo.AddComponent<RectTransform>();
+            imageRect.anchorMin = Vector2.zero;
+            imageRect.anchorMax = Vector2.one;
+            imageRect.pivot = new Vector2(0.5f, 0.5f);
+            imageRect.anchoredPosition = Vector2.zero;
+            imageRect.sizeDelta = Vector2.zero;
+
+            var image = imageGo.AddComponent<Image>();
             image.raycastTarget = false;
+
+            var rawImageGo = new GameObject("RawImage");
+            rawImageGo.transform.SetParent(go.transform, false);
+            var rawImageRect = rawImageGo.AddComponent<RectTransform>();
+            rawImageRect.anchorMin = Vector2.zero;
+            rawImageRect.anchorMax = Vector2.one;
+            rawImageRect.pivot = new Vector2(0.5f, 0.5f);
+            rawImageRect.anchoredPosition = Vector2.zero;
+            rawImageRect.sizeDelta = Vector2.zero;
+
+            var rawImage = rawImageGo.AddComponent<RawImage>();
+            rawImage.raycastTarget = false;
 
             var group = go.AddComponent<CanvasGroup>();
             group.alpha = 0f;
@@ -1544,8 +1566,58 @@ namespace MatchThree.Runtime
             {
                 Root = rect,
                 Image = image,
+                RawImage = rawImage,
                 Group = group
             };
+        }
+
+        private static Rect CalculateSpriteUvRect(Sprite sprite)
+        {
+            if (sprite == null || sprite.texture == null || sprite.texture.width <= 0 || sprite.texture.height <= 0)
+            {
+                return new Rect(0f, 0f, 1f, 1f);
+            }
+
+            var textureRect = sprite.textureRect;
+            var texture = sprite.texture;
+            return new Rect(
+                textureRect.x / texture.width,
+                textureRect.y / texture.height,
+                textureRect.width / texture.width,
+                textureRect.height / texture.height);
+        }
+
+        private static Rect SliceUvRect(Rect sourceUvRect, int columns, int rows, int column, int row)
+        {
+            var fragmentWidth = sourceUvRect.width / Mathf.Max(1, columns);
+            var fragmentHeight = sourceUvRect.height / Mathf.Max(1, rows);
+            return new Rect(
+                sourceUvRect.x + (fragmentWidth * column),
+                sourceUvRect.y + (fragmentHeight * row),
+                fragmentWidth,
+                fragmentHeight);
+        }
+
+        private static void ConfigureShardAsFallbackSprite(PooledUiShard shard, Sprite sprite, Color color)
+        {
+            shard.Image.enabled = true;
+            shard.Image.sprite = sprite;
+            shard.Image.color = color;
+
+            shard.RawImage.enabled = false;
+            shard.RawImage.texture = null;
+            shard.RawImage.uvRect = new Rect(0f, 0f, 1f, 1f);
+        }
+
+        private static void ConfigureShardAsRawImageFragment(PooledUiShard shard, Sprite sourceSprite, Rect uvRect, Color color)
+        {
+            shard.RawImage.enabled = true;
+            shard.RawImage.texture = sourceSprite.texture;
+            shard.RawImage.uvRect = uvRect;
+            shard.RawImage.color = color;
+
+            shard.Image.enabled = false;
+            shard.Image.sprite = null;
         }
 
         private PooledClearParticle CreateClearParticleSystem(int index)
@@ -1681,7 +1753,15 @@ namespace MatchThree.Runtime
             for (var i = 0; i < maxTiles; i++)
             {
                 var origin = removedViews[i].Root.anchoredPosition;
-                var shardsPerTile = Random.Range(3, 7);
+                var sourceSprite = removedViews[i].Icon != null && removedViews[i].Icon.enabled ? removedViews[i].Icon.sprite : null;
+                var sourceColor = removedViews[i].Icon != null ? removedViews[i].Icon.color : Color.white;
+                var useSpriteFragments = sourceSprite != null;
+
+                var columns = 2;
+                var rows = useSpriteFragments && Random.value > 0.5f ? 3 : 2;
+                var shardsPerTile = useSpriteFragments ? (columns * rows) : Random.Range(3, 7);
+                var sourceUvRect = useSpriteFragments ? CalculateSpriteUvRect(sourceSprite) : default;
+
                 for (var shardIndex = 0; shardIndex < shardsPerTile; shardIndex++)
                 {
                     if (_clearUiShardPool.Count == 0)
@@ -1689,31 +1769,61 @@ namespace MatchThree.Runtime
                         return;
                     }
 
-                    var dir = Random.insideUnitCircle;
-                    if (dir.sqrMagnitude < 0.001f)
-                    {
-                        dir = Vector2.up;
-                    }
-
                     var shard = _clearUiShardPool.Dequeue();
-                    var travelDistance = clearParticleSpeed * Random.Range(40f, 80f);
+                    var travelDistance = clearParticleSpeed * Random.Range(36f, 82f);
                     var baseSize = clearParticleScale * cellSize * Random.Range(0.25f, 0.45f);
 
-                    shard.Root.anchoredPosition = origin;
+                    Vector2 localOffset;
+                    Vector2 dir;
+                    if (useSpriteFragments)
+                    {
+                        var column = shardIndex % columns;
+                        var row = shardIndex / columns;
+                        var centerFromOrigin = new Vector2(
+                            ((column + 0.5f) / columns) - 0.5f,
+                            ((row + 0.5f) / rows) - 0.5f);
+
+                        localOffset = centerFromOrigin * (cellSize * 0.16f);
+                        dir = (centerFromOrigin + (Random.insideUnitCircle * 0.22f)).normalized;
+                        if (dir.sqrMagnitude < 0.001f)
+                        {
+                            dir = Vector2.up;
+                        }
+
+                        baseSize *= Random.Range(0.95f, 1.2f);
+                        ConfigureShardAsRawImageFragment(
+                            shard,
+                            sourceSprite,
+                            SliceUvRect(sourceUvRect, columns, rows, column, row),
+                            sourceColor);
+                    }
+                    else
+                    {
+                        dir = Random.insideUnitCircle;
+                        if (dir.sqrMagnitude < 0.001f)
+                        {
+                            dir = Vector2.up;
+                        }
+
+                        localOffset = Random.insideUnitCircle * (cellSize * 0.04f);
+                        ConfigureShardAsFallbackSprite(
+                            shard,
+                            hasCustomSprites ? clearShardSprites[Random.Range(0, clearShardSprites.Length)] : _defaultUiShardSprite,
+                            Color.white);
+                    }
+
+                    shard.Root.anchoredPosition = origin + localOffset;
                     shard.Root.sizeDelta = Vector2.one * baseSize;
                     shard.Root.localScale = Vector3.one;
                     shard.Root.localEulerAngles = new Vector3(0f, 0f, Random.Range(0f, 360f));
                     shard.Group.alpha = 1f;
-                    shard.Image.sprite = hasCustomSprites ? clearShardSprites[Random.Range(0, clearShardSprites.Length)] : _defaultUiShardSprite;
-                    shard.Image.color = Color.white;
-                    shard.Image.enabled = true;
                     shard.Root.gameObject.SetActive(true);
 
                     _activeUiShards.Add(new ActiveUiShard
                     {
                         Shard = shard,
-                        Start = origin,
-                        End = origin + dir.normalized * travelDistance,
+                        Start = origin + localOffset,
+                        End = origin + localOffset + (dir.normalized * travelDistance),
                         Duration = clearParticleLifetime,
                         Elapsed = 0f,
                         StartRotation = shard.Root.localEulerAngles.z,
