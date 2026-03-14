@@ -46,6 +46,9 @@ namespace MatchThree.Runtime
         [Header("Board Background")]
         [SerializeField] private Sprite boardGridSprite;
 
+        [Header("Win Overlay")]
+        [SerializeField] private Sprite winPopupIconSprite;
+
         [SerializeField] private TextAsset levelAsset;
         [SerializeField] private TextAsset levelConfigAsset;
         [SerializeField] private LevelRegistry levelRegistry = new();
@@ -743,19 +746,50 @@ namespace MatchThree.Runtime
             glowRect.anchoredPosition = new Vector2(0f, -90f);
 
             var iconGo = FindOrCreateUiObject(cardGo.transform, "RewardIcon");
-            var iconText = EnsureComponent<Text>(iconGo);
-            iconText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            iconText.text = "★";
-            iconText.alignment = TextAnchor.MiddleCenter;
-            iconText.color = new Color(1f, 0.86f, 0.2f, 1f);
-            iconText.fontSize = 120;
+            var existingIconText = iconGo.GetComponent<Text>();
+            if (existingIconText != null)
+            {
+                Destroy(existingIconText);
+            }
 
-            var iconRect = iconText.rectTransform;
+            var iconImage = EnsureComponent<Image>(iconGo);
+            iconImage.raycastTarget = false;
+
+            var iconRect = iconImage.rectTransform;
             iconRect.anchorMin = new Vector2(0.5f, 1f);
             iconRect.anchorMax = new Vector2(0.5f, 1f);
             iconRect.pivot = new Vector2(0.5f, 0.5f);
             iconRect.sizeDelta = new Vector2(200f, 120f);
             iconRect.anchoredPosition = new Vector2(0f, -120f);
+
+            var fallbackTextGo = FindOrCreateUiObject(iconGo.transform, "FallbackText");
+            var fallbackText = EnsureComponent<Text>(fallbackTextGo);
+            fallbackText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            fallbackText.text = "★";
+            fallbackText.alignment = TextAnchor.MiddleCenter;
+            fallbackText.color = new Color(1f, 0.86f, 0.2f, 1f);
+            fallbackText.fontSize = 120;
+
+            var fallbackTextRect = fallbackText.rectTransform;
+            fallbackTextRect.anchorMin = Vector2.zero;
+            fallbackTextRect.anchorMax = Vector2.one;
+            fallbackTextRect.offsetMin = Vector2.zero;
+            fallbackTextRect.offsetMax = Vector2.zero;
+
+            if (winPopupIconSprite != null)
+            {
+                iconImage.sprite = winPopupIconSprite;
+                iconImage.color = Color.white;
+                iconImage.preserveAspect = true;
+                fallbackText.gameObject.SetActive(false);
+            }
+            else
+            {
+                iconImage.sprite = null;
+                iconImage.color = Color.clear;
+                iconImage.preserveAspect = false;
+                fallbackText.gameObject.SetActive(true);
+            }
 
             var titleGo = FindOrCreateUiObject(cardGo.transform, "Title");
             var titleText = EnsureComponent<Text>(titleGo);
