@@ -75,6 +75,12 @@ namespace MatchThree.Runtime
 
         private GameObject _winPanel;
         private GameObject _losePanel;
+        private CanvasGroup _winOverlayBackgroundGroup;
+        private CanvasGroup _winOverlayCardGroup;
+        private RectTransform _winOverlayCardRect;
+        private RectTransform _winOverlayTitleRect;
+        private RectTransform _winOverlayIconRect;
+        private Coroutine _winOverlayAnimationRoutine;
         private int _currentLevelIndex;
         private List<RuntimeLevelData> _levels = new();
 
@@ -317,7 +323,7 @@ namespace MatchThree.Runtime
             EnsureClearUiShardPool();
 
             // Overlays
-            _winPanel = BuildOverlayPanel(canvas.transform, "WinPanel", "You Win!", "Next", LoadNextLevel);
+            _winPanel = BuildWinOverlayPanel(canvas.transform, "WinPanel", LoadNextLevel);
             _losePanel = BuildOverlayPanel(canvas.transform, "LosePanel", "You Lose!", "Retry", RetryLevel);
             ShowOverlay(null);
         }
@@ -491,8 +497,109 @@ namespace MatchThree.Runtime
 
         private void ShowOverlay(GameState? state)
         {
-            if (_winPanel != null) _winPanel.SetActive(state == GameState.Won);
+            if (state == GameState.Won)
+            {
+                ShowWinOverlayAnimated();
+            }
+            else if (_winPanel != null)
+            {
+                if (_winOverlayAnimationRoutine != null)
+                {
+                    StopCoroutine(_winOverlayAnimationRoutine);
+                    _winOverlayAnimationRoutine = null;
+                }
+
+                _winPanel.SetActive(false);
+            }
+
             if (_losePanel != null) _losePanel.SetActive(state == GameState.Lost);
+        }
+
+        private void ShowWinOverlayAnimated()
+        {
+            if (_winPanel == null) return;
+
+            _winPanel.SetActive(true);
+
+            if (_winOverlayAnimationRoutine != null)
+            {
+                StopCoroutine(_winOverlayAnimationRoutine);
+            }
+
+            _winOverlayAnimationRoutine = StartCoroutine(AnimateOverlayIn());
+        }
+
+        private IEnumerator AnimateOverlayIn()
+        {
+            if (_winOverlayBackgroundGroup == null || _winOverlayCardGroup == null || _winOverlayCardRect == null)
+            {
+                yield break;
+            }
+
+            const float fadeDuration = 0.20f;
+            const float cardAppearDuration = 0.28f;
+            const float settleDuration = 0.14f;
+            const float iconPunchDuration = 0.18f;
+
+            _winOverlayBackgroundGroup.alpha = 0f;
+            _winOverlayCardGroup.alpha = 0f;
+            _winOverlayCardRect.localScale = new Vector3(0.80f, 0.80f, 1f);
+            if (_winOverlayTitleRect != null) _winOverlayTitleRect.localScale = Vector3.one;
+            if (_winOverlayIconRect != null) _winOverlayIconRect.localScale = Vector3.one * 0.9f;
+
+            var elapsed = 0f;
+            while (elapsed < fadeDuration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                _winOverlayBackgroundGroup.alpha = Mathf.Clamp01(elapsed / fadeDuration);
+                yield return null;
+            }
+
+            _winOverlayBackgroundGroup.alpha = 1f;
+
+            elapsed = 0f;
+            while (elapsed < cardAppearDuration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                var t = Mathf.Clamp01(elapsed / cardAppearDuration);
+                var eased = 1f - Mathf.Pow(1f - t, 3f);
+                _winOverlayCardGroup.alpha = eased;
+                var scale = Mathf.Lerp(0.80f, 1.05f, eased);
+                _winOverlayCardRect.localScale = new Vector3(scale, scale, 1f);
+                yield return null;
+            }
+
+            elapsed = 0f;
+            while (elapsed < settleDuration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                var t = Mathf.Clamp01(elapsed / settleDuration);
+                var scale = Mathf.Lerp(1.05f, 1f, t);
+                _winOverlayCardRect.localScale = new Vector3(scale, scale, 1f);
+                yield return null;
+            }
+
+            _winOverlayCardRect.localScale = Vector3.one;
+            _winOverlayCardGroup.alpha = 1f;
+
+            if (_winOverlayTitleRect != null && _winOverlayIconRect != null)
+            {
+                elapsed = 0f;
+                while (elapsed < iconPunchDuration)
+                {
+                    elapsed += Time.unscaledDeltaTime;
+                    var t = Mathf.Clamp01(elapsed / iconPunchDuration);
+                    var punch = 1f + Mathf.Sin(t * Mathf.PI) * 0.08f;
+                    _winOverlayIconRect.localScale = Vector3.one * punch;
+                    _winOverlayTitleRect.localScale = Vector3.one * (1f + Mathf.Sin(t * Mathf.PI) * 0.03f);
+                    yield return null;
+                }
+
+                _winOverlayIconRect.localScale = Vector3.one;
+                _winOverlayTitleRect.localScale = Vector3.one;
+            }
+
+            _winOverlayAnimationRoutine = null;
         }
 
         private static GameObject FindOrCreateUiObject(Transform parent, string objectName)
@@ -579,6 +686,140 @@ namespace MatchThree.Runtime
             buttonLabelRect.anchorMax = Vector2.one;
             buttonLabelRect.offsetMin = Vector2.zero;
             buttonLabelRect.offsetMax = Vector2.zero;
+
+            panelGo.SetActive(false);
+            return panelGo;
+        }
+
+        private GameObject BuildWinOverlayPanel(
+            Transform canvas,
+            string panelName,
+            UnityEngine.Events.UnityAction onClick)
+        {
+            var panelGo = FindOrCreateUiObject(canvas, panelName);
+            var panelRect = EnsureComponent<RectTransform>(panelGo);
+            panelRect.anchorMin = Vector2.zero;
+            panelRect.anchorMax = Vector2.one;
+            panelRect.offsetMin = Vector2.zero;
+            panelRect.offsetMax = Vector2.zero;
+
+            var blockInputGroup = EnsureComponent<CanvasGroup>(panelGo);
+            blockInputGroup.interactable = true;
+            blockInputGroup.blocksRaycasts = true;
+
+            var backgroundGo = FindOrCreateUiObject(panelGo.transform, "Background");
+            var backgroundImage = EnsureComponent<Image>(backgroundGo);
+            backgroundImage.color = new Color(0f, 0f, 0f, 0.78f);
+            backgroundImage.raycastTarget = true;
+
+            var backgroundRect = backgroundImage.rectTransform;
+            backgroundRect.anchorMin = Vector2.zero;
+            backgroundRect.anchorMax = Vector2.one;
+            backgroundRect.offsetMin = Vector2.zero;
+            backgroundRect.offsetMax = Vector2.zero;
+
+            _winOverlayBackgroundGroup = EnsureComponent<CanvasGroup>(backgroundGo);
+
+            var cardGo = FindOrCreateUiObject(panelGo.transform, "RewardCard");
+            var cardRect = EnsureComponent<RectTransform>(cardGo);
+            cardRect.anchorMin = new Vector2(0.5f, 0.5f);
+            cardRect.anchorMax = new Vector2(0.5f, 0.5f);
+            cardRect.pivot = new Vector2(0.5f, 0.5f);
+            cardRect.sizeDelta = new Vector2(700f, 780f);
+            cardRect.anchoredPosition = new Vector2(0f, 60f);
+
+            var cardImage = EnsureComponent<Image>(cardGo);
+            cardImage.color = new Color(0.10f, 0.12f, 0.20f, 0.96f);
+            _winOverlayCardGroup = EnsureComponent<CanvasGroup>(cardGo);
+
+            var glowGo = FindOrCreateUiObject(cardGo.transform, "Glow");
+            var glowImage = EnsureComponent<Image>(glowGo);
+            glowImage.color = new Color(1f, 0.87f, 0.22f, 0.20f);
+            var glowRect = glowImage.rectTransform;
+            glowRect.anchorMin = new Vector2(0.5f, 1f);
+            glowRect.anchorMax = new Vector2(0.5f, 1f);
+            glowRect.pivot = new Vector2(0.5f, 0.5f);
+            glowRect.sizeDelta = new Vector2(360f, 180f);
+            glowRect.anchoredPosition = new Vector2(0f, -90f);
+
+            var iconGo = FindOrCreateUiObject(cardGo.transform, "RewardIcon");
+            var iconText = EnsureComponent<Text>(iconGo);
+            iconText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            iconText.text = "★";
+            iconText.alignment = TextAnchor.MiddleCenter;
+            iconText.color = new Color(1f, 0.86f, 0.2f, 1f);
+            iconText.fontSize = 120;
+
+            var iconRect = iconText.rectTransform;
+            iconRect.anchorMin = new Vector2(0.5f, 1f);
+            iconRect.anchorMax = new Vector2(0.5f, 1f);
+            iconRect.pivot = new Vector2(0.5f, 0.5f);
+            iconRect.sizeDelta = new Vector2(200f, 120f);
+            iconRect.anchoredPosition = new Vector2(0f, -120f);
+
+            var titleGo = FindOrCreateUiObject(cardGo.transform, "Title");
+            var titleText = EnsureComponent<Text>(titleGo);
+            titleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            titleText.text = "Level Complete!";
+            titleText.alignment = TextAnchor.MiddleCenter;
+            titleText.color = Color.white;
+            titleText.fontSize = 76;
+
+            var titleRect = titleText.rectTransform;
+            titleRect.anchorMin = new Vector2(0.5f, 1f);
+            titleRect.anchorMax = new Vector2(0.5f, 1f);
+            titleRect.pivot = new Vector2(0.5f, 0.5f);
+            titleRect.sizeDelta = new Vector2(620f, 140f);
+            titleRect.anchoredPosition = new Vector2(0f, -250f);
+
+            var subtitleGo = FindOrCreateUiObject(cardGo.transform, "Subtitle");
+            var subtitleText = EnsureComponent<Text>(subtitleGo);
+            subtitleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            subtitleText.text = "Great match! Ready for the next challenge?";
+            subtitleText.alignment = TextAnchor.MiddleCenter;
+            subtitleText.color = new Color(0.86f, 0.90f, 1f, 0.98f);
+            subtitleText.fontSize = 38;
+
+            var subtitleRect = subtitleText.rectTransform;
+            subtitleRect.anchorMin = new Vector2(0.5f, 0.5f);
+            subtitleRect.anchorMax = new Vector2(0.5f, 0.5f);
+            subtitleRect.pivot = new Vector2(0.5f, 0.5f);
+            subtitleRect.sizeDelta = new Vector2(620f, 150f);
+            subtitleRect.anchoredPosition = new Vector2(0f, -30f);
+
+            var buttonGo = FindOrCreateUiObject(cardGo.transform, "ActionButton");
+            var buttonImage = EnsureComponent<Image>(buttonGo);
+            buttonImage.color = new Color(1f, 0.77f, 0.18f, 1f);
+
+            var button = EnsureComponent<Button>(buttonGo);
+            button.targetGraphic = buttonImage;
+            button.onClick.RemoveAllListeners();
+            button.onClick.AddListener(onClick);
+
+            var buttonRect = button.GetComponent<RectTransform>();
+            buttonRect.anchorMin = new Vector2(0.5f, 0f);
+            buttonRect.anchorMax = new Vector2(0.5f, 0f);
+            buttonRect.pivot = new Vector2(0.5f, 0.5f);
+            buttonRect.sizeDelta = new Vector2(460f, 118f);
+            buttonRect.anchoredPosition = new Vector2(0f, 100f);
+
+            var buttonLabelGo = FindOrCreateUiObject(buttonGo.transform, "Label");
+            var buttonLabel = EnsureComponent<Text>(buttonLabelGo);
+            buttonLabel.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            buttonLabel.text = "Next";
+            buttonLabel.alignment = TextAnchor.MiddleCenter;
+            buttonLabel.color = new Color(0.18f, 0.11f, 0.02f, 1f);
+            buttonLabel.fontSize = 52;
+
+            var buttonLabelRect = buttonLabel.rectTransform;
+            buttonLabelRect.anchorMin = Vector2.zero;
+            buttonLabelRect.anchorMax = Vector2.one;
+            buttonLabelRect.offsetMin = Vector2.zero;
+            buttonLabelRect.offsetMax = Vector2.zero;
+
+            _winOverlayCardRect = cardRect;
+            _winOverlayTitleRect = titleRect;
+            _winOverlayIconRect = iconRect;
 
             panelGo.SetActive(false);
             return panelGo;
