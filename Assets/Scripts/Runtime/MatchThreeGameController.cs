@@ -30,8 +30,8 @@ namespace MatchThree.Runtime
         private const float BoardHeightUsage = 0.96f;
 
         [Header("Tile Icon Rendering")]
-        [SerializeField, Range(-12f, 10f)] private float iconInset = -6f;
-        [SerializeField, Range(0.85f, 1.35f)] private float tileIconScale = 1.08f;
+        [SerializeField, Range(-24f, 10f)] private float iconInset = -6f;
+        [SerializeField, Range(0.85f, 1.75f)] private float tileIconScale = 1.45f;
         [SerializeField] private bool preserveTileIconAspect;
         [SerializeField] private bool useTightTileSpriteMesh;
 
