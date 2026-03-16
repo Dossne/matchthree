@@ -13,10 +13,6 @@ namespace MatchThree.Runtime
         private const string DefaultLevelResourcePath = "Levels/level_000";
         private const float SwapDurationSeconds = 0.10f;
         private const float ClearDurationSeconds = 0.22f;
-        private const float FallPerCellSeconds = 0.08f;
-        private const float MinFallDurationSeconds = 0.10f;
-        private const float MaxFallDurationSeconds = 0.48f;
-        private const float SettleDelaySeconds = 0.14f;
         private const int MaxGoalFlyersPerStep = 8;
         private const int MaxGoalFlyersPerTargetPerStep = 6;
         private const int ClearParticlePoolSize = 16;
@@ -52,6 +48,17 @@ namespace MatchThree.Runtime
 
         [Header("Win Overlay")]
         [SerializeField] private Sprite winPopupIconSprite;
+
+        [Header("Fall Animation")]
+        [SerializeField, Range(0.04f, 0.20f)] private float fallPerCellSeconds = 0.09f;
+        [SerializeField, Range(0.08f, 0.24f)] private float minFallDurationSeconds = 0.12f;
+        [SerializeField, Range(0.20f, 0.80f)] private float maxFallDurationSeconds = 0.56f;
+        [SerializeField, Range(0.06f, 0.30f)] private float settleDelaySeconds = 0.16f;
+        [SerializeField, Range(0f, 24f)] private float fallOvershootPixels = 6f;
+        [SerializeField, Range(0.03f, 0.20f)] private float fallSettleDuration = 0.08f;
+        [SerializeField, Range(0f, 0.20f)] private float fallStretchAmount = 0.06f;
+        [SerializeField, Range(0.85f, 1.15f)] private float landingSquashX = 1.05f;
+        [SerializeField, Range(0.75f, 1.05f)] private float landingSquashY = 0.92f;
 
         [SerializeField] private TextAsset levelAsset;
         [SerializeField] private TextAsset levelConfigAsset;
@@ -983,7 +990,7 @@ namespace MatchThree.Runtime
                 var hasNextStep = i < result.Steps.Count - 1;
                 if (step.DidChange && hasNextStep)
                 {
-                    yield return new WaitForSeconds(SettleDelaySeconds);
+                    yield return new WaitForSeconds(settleDelaySeconds);
                 }
             }
 
@@ -1106,12 +1113,12 @@ namespace MatchThree.Runtime
 
                     var tile = CreateTransientTile(movement.Tile, movement.From);
                     var dist = Mathf.Abs(movement.To.Y - movement.From.Y) + Mathf.Abs(movement.To.X - movement.From.X);
-                    var duration = Mathf.Clamp(dist * FallPerCellSeconds, MinFallDurationSeconds, MaxFallDurationSeconds);
+                    var duration = Mathf.Clamp(dist * fallPerCellSeconds, minFallDurationSeconds, maxFallDurationSeconds);
                     moving.Add((tile.Root, CellPosition(movement.From), CellPosition(movement.To), duration));
                 }
 
                 SetCellsVisible(hidden, false);
-                yield return AnimateManyMoves(moving);
+                yield return AnimateWeightedFalls(moving);
 
                 foreach (var m in moving) Destroy(m.Rect.gameObject);
                 SetCellsVisible(hidden, true);
@@ -1129,14 +1136,14 @@ namespace MatchThree.Runtime
                     var tile = CreateTransientTile(spawn.Tile, spawn.To);
                     var to = CellPosition(spawn.To);
                     var from = to + new Vector2(0f, (_grid.cellSize.y + _grid.spacing.y) * spawn.SpawnDistance);
-                    var duration = Mathf.Clamp(spawn.SpawnDistance * FallPerCellSeconds, MinFallDurationSeconds, MaxFallDurationSeconds);
+                    var duration = Mathf.Clamp(spawn.SpawnDistance * fallPerCellSeconds, minFallDurationSeconds, maxFallDurationSeconds);
 
                     tile.Root.anchoredPosition = from;
                     spawning.Add((tile.Root, from, to, duration));
                 }
 
                 SetCellsVisible(hidden, false);
-                yield return AnimateManyMoves(spawning);
+                yield return AnimateWeightedFalls(spawning);
 
                 foreach (var s in spawning) Destroy(s.Rect.gameObject);
                 SetCellsVisible(hidden, true);
@@ -1343,6 +1350,62 @@ namespace MatchThree.Runtime
             {
                 move.Rect.anchoredPosition = move.To;
             }
+        }
+
+        private IEnumerator AnimateWeightedFalls(List<(RectTransform Rect, Vector2 From, Vector2 To, float Duration)> moves)
+        {
+            var maxDuration = moves.Max(m => m.Duration + fallSettleDuration);
+            var elapsed = 0f;
+
+            while (elapsed < maxDuration)
+            {
+                elapsed += Time.deltaTime;
+
+                foreach (var move in moves)
+                {
+                    var fallT = Mathf.Clamp01(elapsed / move.Duration);
+                    var easedFall = EaseInCubic(fallT);
+                    var overshootTo = move.To + Vector2.down * fallOvershootPixels;
+
+                    if (fallT < 1f)
+                    {
+                        move.Rect.anchoredPosition = Vector2.LerpUnclamped(move.From, overshootTo, easedFall);
+                        var stretch = Mathf.Sin(fallT * Mathf.PI) * fallStretchAmount;
+                        move.Rect.localScale = new Vector3(1f - stretch * 0.55f, 1f + stretch, 1f);
+                        continue;
+                    }
+
+                    var settleT = Mathf.Clamp01((elapsed - move.Duration) / fallSettleDuration);
+                    var settleEase = EaseOutCubic(settleT);
+                    move.Rect.anchoredPosition = Vector2.LerpUnclamped(overshootTo, move.To, settleEase);
+
+                    var impact = 1f - settleT;
+                    var squashX = Mathf.Lerp(1f, landingSquashX, impact);
+                    var squashY = Mathf.Lerp(1f, landingSquashY, impact);
+                    move.Rect.localScale = new Vector3(squashX, squashY, 1f);
+                }
+
+                yield return null;
+            }
+
+            foreach (var move in moves)
+            {
+                move.Rect.anchoredPosition = move.To;
+                move.Rect.localScale = Vector3.one;
+            }
+        }
+
+        private static float EaseInCubic(float t)
+        {
+            t = Mathf.Clamp01(t);
+            return t * t * t;
+        }
+
+        private static float EaseOutCubic(float t)
+        {
+            t = Mathf.Clamp01(t);
+            var inv = 1f - t;
+            return 1f - (inv * inv * inv);
         }
 
         private void SetInputEnabled(bool enabled)
