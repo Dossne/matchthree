@@ -192,6 +192,12 @@ namespace MatchThree.Runtime
                     changed = true;
                 }
 
+                if (importer.spriteMeshType != TextureImporterSpriteMeshType.FullRect)
+                {
+                    importer.spriteMeshType = TextureImporterSpriteMeshType.FullRect;
+                    changed = true;
+                }
+
                 if (importer.maxTextureSize < MinimumMaxTextureSize)
                 {
                     importer.maxTextureSize = MinimumMaxTextureSize;

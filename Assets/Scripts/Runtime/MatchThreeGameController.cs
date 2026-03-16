@@ -29,7 +29,11 @@ namespace MatchThree.Runtime
         private const float BoardWidthUsage = 0.90f;
         private const float BoardHeightUsage = 0.96f;
 
+        [Header("Tile Icon Rendering")]
         [SerializeField, Range(-12f, 10f)] private float iconInset = -6f;
+        [SerializeField, Range(0.85f, 1.35f)] private float tileIconScale = 1.08f;
+        [SerializeField] private bool preserveTileIconAspect;
+        [SerializeField] private bool useTightTileSpriteMesh;
 
         [Header("Clear Particles")]
         [SerializeField] private Material clearParticleMaterial;
@@ -1677,8 +1681,8 @@ namespace MatchThree.Runtime
 
         private void ConfigureTileIcon(Image icon)
         {
-            icon.useSpriteMesh = true;
-            icon.preserveAspect = true;
+            icon.useSpriteMesh = useTightTileSpriteMesh;
+            icon.preserveAspect = preserveTileIconAspect;
             icon.raycastTarget = false;
             icon.type = Image.Type.Simple;
 
@@ -1690,6 +1694,7 @@ namespace MatchThree.Runtime
             rt.sizeDelta = Vector2.zero;
             rt.offsetMin = new Vector2(iconInset, iconInset);
             rt.offsetMax = new Vector2(-iconInset, -iconInset);
+            rt.localScale = Vector3.one * tileIconScale;
         }
 
         private TransientTile CreateTransientTile(TileEntitySnapshot tile, BoardPosition at)
