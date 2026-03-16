@@ -741,7 +741,7 @@ namespace MatchThree.Runtime
 
             var glowGo = FindOrCreateUiObject(cardGo.transform, "Glow");
             var glowImage = EnsureComponent<Image>(glowGo);
-            glowImage.color = new Color(1f, 0.87f, 0.22f, 0.20f);
+            glowImage.color = new Color(1f, 0.87f, 0.22f, 0f);
             var glowRect = glowImage.rectTransform;
             glowRect.anchorMin = new Vector2(0.5f, 1f);
             glowRect.anchorMax = new Vector2(0.5f, 1f);
