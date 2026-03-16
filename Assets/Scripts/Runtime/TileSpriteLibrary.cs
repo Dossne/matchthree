@@ -192,9 +192,9 @@ namespace MatchThree.Runtime
                     changed = true;
                 }
 
-                if (importer.spriteMeshType != TextureImporterSpriteMeshType.FullRect)
+                if (importer.spriteMeshType != SpriteMeshType.FullRect)
                 {
-                    importer.spriteMeshType = TextureImporterSpriteMeshType.FullRect;
+                    importer.spriteMeshType = SpriteMeshType.FullRect;
                     changed = true;
                 }
 
